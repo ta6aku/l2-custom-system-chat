@@ -179,14 +179,15 @@ void StopBackgroundThread(bool isProcessTerminating) {
     }
     g_QueueCV.notify_one();
 
-    if (isProcessTerminating) {
-        return; 
-    }
-
     if (g_WorkerThread.joinable()) {
-        g_WorkerThread.join();
+        if (isProcessTerminating) {
+            g_WorkerThread.detach(); 
+        } else {
+            g_WorkerThread.join();
+        }
     }
 }
+
 
 // Единый VEH Обработчик для брейкпоинтов
 LONG CALLBACK VectoredExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo) {
@@ -289,11 +290,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     else if (ul_reason_for_call == DLL_PROCESS_DETACH) {
         bool isTerminating = (lpReserved != nullptr);
         
-        // Передаем флаг завершения, чтобы не вызывать .join()
         StopBackgroundThread(isTerminating); 
         
-        if (g_VehHandle) {
+        // Удаляем VEH только при мягкой выгрузке
+        if (g_VehHandle && !isTerminating) {
             RemoveVectoredExceptionHandler(g_VehHandle);
+            g_VehHandle = nullptr;
         }
     }
     return TRUE;
