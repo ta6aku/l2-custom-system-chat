@@ -1,5 +1,5 @@
 # l2-custom-system-chat
-dll collector and ahk.v2 overlay for Lineage 2 C1-C2 client that realize customizable system chat window  
+dll collector and ahk.v2 overlay for Lineage 2 C1 (Harbor) client that realize customizable system chat window  
 
 
 ## Инструкция
@@ -12,12 +12,12 @@ dll collector and ahk.v2 overlay for Lineage 2 C1-C2 client that realize customi
            ├── SystemChat_Configurator.ahk
            ├── Starter.ahk
            ├── SystemMsgExt.dll
-           ├── SystemChat_Config.ini
+           ├── ChatConfig.ini
            ├── lib/
            ├── resources/
            └── ....
    ```
-2. Запустите **SystemChat_Configurator.ahk**, чтобы настроить параметры окна чата и фильтруемые сообщения  
+2. Запустите **SystemChat_Configurator.ahk**, чтобы настроить параметры окна чата и фильтруемые сообщения, не забудьте Сохранить Конфиг.  
 
 3. Запустите игру, запустите **Starter.ahk**    
 
@@ -30,7 +30,7 @@ DLL-инжектор при загрузке в память процесса и
 
 AHKv2 скрипт отображает поверх Lineage 2 окно с таблицей, в которую попадают полученные (и отфильтрованные по id) события. Размеры окна, цвета событий, сам фильтр id событий считываются из .ini файла.  
 Ini файл формируется через вспомогательную утилиту Configurator. Configurator с помощью l2encdec раскодирует `SystemMsg-e`, чтобы отобразить пользователю сообщения в читаемом виде. Пользователь может настроить цвета, шрифт, размер окна и сохранить свою собственную палитру.  
-Графическое оформление окна чата подготавливает Configurator, с помощью umodel извлекая текстуры игры (тем самым учитываются моды на интерфейс установленные у пользователя).  
+Графическое оформление окна чата подготавливает Configurator, с помощью umodel извлекая текстуры игры (тем самым учитываются моды на интерфейс, установленные у пользователя).  
 
 
 ## Ограничения
