@@ -1,4 +1,4 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 #SingleInstance Force
 
 #include "lib\ImagePut.ahk"
@@ -62,6 +62,14 @@ try {
 	ConfigPath := A_ScriptDir "\ChatConfig.ini"
 	ChatHeight := IniRead(ConfigPath, "AdditionalChat", "ChatHeight")
     ChatPosY := IniRead(ConfigPath, "AdditionalChat", "ChatPosY")
+    ChatPosManual := (IniRead(ConfigPath, "AdditionalChat", "ChatPosManual", "false") = "true")
+    if ChatPosManual {
+        ChatPosX := IniRead(ConfigPath, "AdditionalChat", "ChatPosX", "0")
+    }
+    else {
+        ChatPosX := 0
+    }
+    OutputDebug("Settings:" ChatPosManual "`n" ChatPosX)
 }
 catch {
     MsgBox("Failed to find ChatConfig", "Error", 0x10)
@@ -118,7 +126,7 @@ if L2Hwnd {
     else {
         SysChat.Opt("+Owner" L2Hwnd)
     }
-    SysChat.Show("NA x0 y" ChatPosY " w345 h" ChatHeight)
+    SysChat.Show("NA x" ChatPosX " y" ChatPosY " w345 h" ChatHeight)
     ; Отображаем маску внутри главного GUI, смещение y-?? чтобы верхняя строка не влезала. "Огрызок" строки будет служить индикатором того, что отображается не весь чат, что выше есть еще сообщения.
     Mask.Show("x21 y1 w" (VisibleW + 2) " h" (VisibleH + 2))
 }
@@ -180,7 +188,7 @@ ScrollToLastStr() {
 }
 
 ;------------------------------------------------------------------------------------------------------
-
+/*
 ; Заполнение для теста
 LV.Add(, "", "")
 LV.Add(, "Проверка шрифта на читаемость", "")
@@ -196,7 +204,8 @@ Loop 9 {
     LV.Add(, "Добро пожаловать в мир Lineage IIl  # " A_Index, "")
 }
 global LineCounter := 20
-
+*/
+global LineCounter := 1
 
 DisableFontAntialiasing(hwnd) {
     ; Получаем текущий шрифт элемента
