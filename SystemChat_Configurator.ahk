@@ -1,4 +1,4 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 #Include "lib\Class_LV_Colors.ahk"
 #Include "lib\ImagePut.ahk"
 #Include "lib\Gdip_All.ahk"
@@ -75,6 +75,7 @@ HelpText := {
 
 global DebugMode := false
 global NoIntegr := true
+global ChatPosManual := false
 
 global isListLoaded := false
 global isChanged := false
@@ -135,7 +136,7 @@ ddlFontSize.Text := 10
 
 
 ; Блок Окно
-MyGui2.Add("Text", "x+15 yp+4", "Chat Size:")
+tChatSize := MyGui2.Add("Text", "x+15 yp+4", "Chat Size:")
 ddlWSize := MyGui2.Add("DropDownList", "x+3 yp-4 w60", ["30%"])
 ddlWSize.Text := "30%"
 
@@ -143,6 +144,14 @@ ddlWSize.Text := "30%"
 ddlWSize.Opt("+Disabled")
 ddlFont.Opt("+Disabled")
 ddlFontSize.Opt("+Disabled")
+
+
+tChatSize.GetPos(&bX, &bY)
+tChatPosX := MyGui2.Add("Text", "x" bX+1 " y" bY+25 " +Disabled", "X:")
+eChatPosX := MyGui2.Add("Edit", "x+3 yp-2 w40 h20 +Number Limit4 +Disabled", "")
+tChatPosY := MyGui2.Add("Text", "x+10 yp+2 +Disabled", "Y:")
+eChatPosY := MyGui2.Add("Edit", "x+3 yp-2 w41 h20 +Number Limit4 +Disabled", "")
+
 
 
 ; Инструкция и Опции
@@ -271,18 +280,19 @@ SetFonts(*) {
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-
+; Окно Дополнительных параметров
 ShowOptions(ParentGui) {
 
     optGui := Gui("+Owner" ParentGui.Hwnd " +ToolWindow -SysMenu", "Adv. Settings:")
     ParentGui.Opt("+Disabled")
 
-
+    ; Считываем значения
     optDM := optGui.Add("Checkbox", "x20 y20 h20", "Debug Mode")
     optDM.Value := DebugMode
 
-    ;optGIF := optGui.Add("Checkbox", "x20 yp+24 h20", "Low Quality GIF")
-    ;optGIF.Value := GIF
+    optManualPos := optGui.Add("Checkbox", "x20 yp+24 h20", "Manual Chat Position")
+    optManualPos.Value := ChatPosManual
+    optManualPos.oldValue := ChatPosManual
 
     optNoIntegr := optGui.Add("Checkbox", "x20 yp+24 h20 +Disabled", "Disable integration to L2")
     optNoIntegr.Value := NoIntegr
@@ -293,9 +303,24 @@ ShowOptions(ParentGui) {
 
     CloseModal(*) {
         global DebugMode := optDM.Value
-        ;global GIF := optGIF.Value
+        global ChatPosManual := optManualPos.Value
+            if optManualPos.Value {
+                eChatPosX.Opt("-Disabled")
+                tChatPosX.Opt("-Disabled")
+                eChatPosY.Opt("-Disabled")
+                tChatPosY.Opt("-Disabled")
+            }
+            else {
+                eChatPosX.Opt("+Disabled")
+                eChatPosY.Opt("+Disabled")
+                tChatPosX.Opt("+Disabled")
+                tChatPosY.Opt("+Disabled")
+            }
+            if (optManualPos.Value != optManualPos.oldValue) {
+                EnableSaveConfig()
+            }
         global NoIntegr := optNoIntegr.Value
-        (DebugMode) ? Opts.Opt("cMaroon") : Opts.Opt("cBlue")
+        (DebugMode || ChatPosManual) ? Opts.Opt("cMaroon") : Opts.Opt("cBlue")
         ParentGui.Opt("-Disabled")
         optGui.Destroy()
     }
@@ -365,11 +390,20 @@ if (allowedPercents.Length > 4) {
 else {
     ddlWSize.Choose(allowedPercents.Length)
 }
+
+
+
+; Вызов разблокировки кнопки Сохранить, только если значения реально поменяли
 ddlWSize.oldText := ddlWSize.Text
 
-ddlWSize.OnEvent("Change",(ctrl, *) => (ctrl.Text != ctrl.oldText) ? (ctrl.oldText := ctrl.Text, EnableSaveConfig()) : "") ; если значение размера реально поменяли
+ddlWSize.OnEvent("Change",(ctrl, *) => (ctrl.Text != ctrl.oldText) ? (ctrl.oldText := ctrl.Text, EnableSaveConfig()) : "")
 
 
+eChatPosX.oldValue := eChatPosX.Value
+eChatPosY.oldValue := eChatPosY.Value
+
+eChatPosX.OnEvent("Change",(ctrl, *) => (ctrl.Value != ctrl.oldValue) ? (ctrl.oldValue := ctrl.Value, EnableSaveConfig()) : "")
+eChatPosY.OnEvent("Change",(ctrl, *) => (ctrl.Value != ctrl.oldValue) ? (ctrl.oldValue := ctrl.Value, EnableSaveConfig()) : "")
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
 ; Подгрузка данных из systemmsg-e.txt по кнопке LOAD
@@ -496,7 +530,7 @@ ReadDecodedFile() {
 
 ; Функция загрузки сохраненных параметров из конфиг файла
 LoadColorConfig(filepath) {
-    global ColorsConfMap
+    global ColorsConfMap, ChatPosManual
 
     ; Размер окна
     try {
@@ -507,9 +541,29 @@ LoadColorConfig(filepath) {
             ddlWSize.oldText := ddlWSize.Text
         }
     } catch Error {
-        OutputDebug("Failed to load chatconfig.ini or section [AdditionalChat] is missing`n")
+        OutputDebug("Failed to load ChatConfig.ini or section [AdditionalChat] is missing`n")
     }
 
+    ; Положение окна
+    try {
+        chPos := (IniRead(ConfigPath, "AdditionalChat", "ChatPosManual", "false") = "true")
+        if (chPos = true) {
+            ChatPosManual := true
+            eChatPosX.Value := IniRead(filepath, "AdditionalChat", "ChatPosX")
+            eChatPosY.Value := IniRead(filepath, "AdditionalChat", "ChatPosY")
+            eChatPosX.Opt("-Disabled")
+            eChatPosY.Opt("-Disabled")
+            Opts.Opt("cMaroon")
+
+        }
+
+        if (Number(StrReplace(chSize, "%")) <= Number(StrReplace(allowedPercents[allowedPercents.Length], "%"))) {
+            ddlWSize.Text := chSize
+            ddlWSize.oldText := ddlWSize.Text
+        }
+    } catch Error {
+        OutputDebug("Failed to load ChatConfig.ini or section [AdditionalChat] is missing`n")
+    }
     ; Цвета кастомным "клавиш"
     try {
         sectionContent := IniRead(filepath, "CustomColors") ; без третьего параметра IniRead возвращает строку "ключ=значение`nключ2=значение2"
@@ -710,7 +764,25 @@ SaveConfig(*) {
         ChatHeight := Round(GameChatHeight * (Float(StrReplace(ddlWsize.Text, "%")) / 100))
     }
 
-    strChatSizeAndPos := "ChatSize=" ddlWSize.Text "`nChatPosY=" ChatPosY "`nChatHeight=" ChatHeight "`nFont=" ddlFont.Text "`nFontSize=" ddlFontSize.Text "`nFontPath=" fontsMap[ddlFont.Text]
+    if ChatPosManual {
+        if (eChatPosX.Text = "" || eChatPosY.Text = "") {
+            MsgBox("X Y position of Chat should be configured", "Error", "IconX Owner" MyGui2.Hwnd)
+            return
+        }
+        ChatPosX := eChatPosX.Text
+        ChatPosY := eChatPosY.Text
+    }
+    else {
+        ChatPosX := 0
+    }
+
+    if ChatPosManual {
+        strChatSizeAndPos := "ChatPosManual=true`n"
+    }
+    else {
+        strChatSizeAndPos := "ChatPosManual=false`n"
+    }
+    strChatSizeAndPos .= "ChatSize=" ddlWSize.Text "`nChatPosX=" ChatPosX "`nChatPosY=" ChatPosY "`nChatHeight=" ChatHeight "`nFont=" ddlFont.Text "`nFontSize=" ddlFontSize.Text "`nFontPath=" fontsMap[ddlFont.Text]
 
     strCellsColors := ""
     for obj in mColors {
