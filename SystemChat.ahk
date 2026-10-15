@@ -5,20 +5,66 @@
 #Include "lib\Class_LV_Colors.ahk"
 
 
-ChatBkgrndPath := A_ScriptDir "\resources\CustomSystemChatBkgrnd.png"
+; Проверяем основной конфиг файл
+global configPath := A_ScriptDir "\ChatConfig.ini"
+    if !FileExist(configPath) {
+        MsgBox("AHK: ChatConfig.ini not found: " configPath, "Error", 0x10)
+        ExitApp
+    }
 
+
+; Настраиваем трассировку
+global DEBUG_MODE := false
+DEBUG_MODE := (IniRead(configPath, "Options", "DEBUG_MODE", "false") = "true")
+
+if (DEBUG_MODE){
+    global LogFile := FileOpen(A_ScriptDir "\debug_log.txt", "a")
+    SetTimer(() => LogFile.Read(0), 10000)
+    OnError(ErrorFunc)
+}
+
+OnExit(ExitFunc)
+
+LogDebug(msg) {
+    try {
+		static threadID := DllCall("GetCurrentThreadId")
+        LogFile.WriteLine(FormatTime(, "HH:mm:ss") . "." . A_MSec . " [tID " . threadID . "] " . msg)
+    }
+}
+
+(DEBUG_MODE) && LogDebug(Format("`n*****************************************************************`n******************************СТАРТ******************************`n*****************************************************************`nSystemChat Config Path:`n" configPath))
+
+
+
+; Проверяем, подготовлен ли файл фона
+ChatBkgrndPath := A_ScriptDir "\resources\CustomSystemChatBkgrnd.png"
 if !FileExist(ChatBkgrndPath) {
-    MsgBox("Ошибка! Файл фона не найден по пути:`n" ChatBkgrndPath, "Error", 0x10)
+    MsgBox("Ошибка! Файл фона не найден по пути:`n" ChatBkgrndPath "`n`nЗапустите Конфигуратор и настройте программу", "Error", 0x10)
 	ExitApp
 }
 
-DefaultTextColor := "0xB09979"
-DefaultBackColor := "0x1D1D1D"
+
+; Рассчитываем положение системного чата
+try {
+	ChatHeight := IniRead(configPath, "AdditionalChat", "ChatHeight")
+    ChatPosY := IniRead(configPath, "AdditionalChat", "ChatPosY")
+    ChatPosManual := (IniRead(configPath, "AdditionalChat", "ChatPosManual", "false") = "true")
+    if ChatPosManual {
+        ChatPosX := IniRead(configPath, "AdditionalChat", "ChatPosX", "0")
+    }
+    else {
+        ChatPosX := 0
+    }
+    (DEBUG_MODE) && LogDebug(Format("ChatPosX: " ChatPosX "   ChatPosY: " ChatPosY "   ChatHeight: " ChatHeight))
+}
+catch Error as err {
+    ErrorFunc(err, "Thrown")
+    MsgBox("Failed to parse ChatConfig.ini", "Error", 0x10)
+	ExitApp
+}
 
 global NoIntegr := true
 
-
-CoordMode "Mouse", "Client"
 ;------------------------------------------------------------------------------------------------------
 
 ; Загружаем конфиг фильтрации ID -> Color
@@ -27,18 +73,13 @@ LoadMsgFilterConfig()
 
 LoadMsgFilterConfig() {
     global MsgColorMap
-    configPath := A_ScriptDir "\ChatConfig.ini"
-    if !FileExist(configPath) {
-        OutputDebug("AHK: ChatConfig.ini not found: " configPath)
-        return
-    }
-
     try {
         ; Без третьего параметра IniRead возвращает строку "ключ=значение`nключ2=значение2"
         sectionContent := IniRead(configPath, "MsgFilter")
-    } catch {
-        OutputDebug("AHK: Section [MsgFilter] not found or empty")
-        return
+    } catch Error as err {
+        ErrorFunc(err, "Thrown")
+        MsgBox("Failed to parse ChatConfig.ini", "Error", 0x10)
+        ExitApp
     }
 
     ; Парсим полученную строку
@@ -54,27 +95,12 @@ LoadMsgFilterConfig() {
             }
         }
     }
-    OutputDebug("AHK: Loaded " MsgColorMap.Count " ID->Color mappings from ChatConfig.ini")
+    (DEBUG_MODE) && LogDebug(Format("Loaded " MsgColorMap.Count " ID->Color mappings from ChatConfig.ini"))
 }
 
+DefaultTextColor := "0xB09979"
+DefaultBackColor := "0x1D1D1D"
 
-try {
-	ConfigPath := A_ScriptDir "\ChatConfig.ini"
-	ChatHeight := IniRead(ConfigPath, "AdditionalChat", "ChatHeight")
-    ChatPosY := IniRead(ConfigPath, "AdditionalChat", "ChatPosY")
-    ChatPosManual := (IniRead(ConfigPath, "AdditionalChat", "ChatPosManual", "false") = "true")
-    if ChatPosManual {
-        ChatPosX := IniRead(ConfigPath, "AdditionalChat", "ChatPosX", "0")
-    }
-    else {
-        ChatPosX := 0
-    }
-    OutputDebug("Settings:" ChatPosManual "`n" ChatPosX)
-}
-catch {
-    MsgBox("Failed to find ChatConfig", "Error", 0x10)
-	ExitApp
-}
 
 ; 0. Создаем окно-фон
 ;global СBack := Gui("-SysMenu -Caption -Border -DPIScale")
@@ -104,6 +130,8 @@ VisibleH := ChatHeight - 5
 global LV := Mask.AddListView("x0 y0 w" (VisibleW + 25) " h" (VisibleH + 20) " -Hdr -Multi -E0x200 +LV0x14000 BackgroundABCDEF c" DefaultTextColor, ["Msg", "Color"])
 LV.ModifyCol(1, VisibleW + 25)
 LV.ModifyCol(2, 0)
+
+
 DisableFontAntialiasing(LV.Hwnd)
 
 LV_STR_MAX := 4000 ; по достижении этого количества строк частично очищаем таблицу от старых событий
@@ -188,24 +216,26 @@ ScrollToLastStr() {
 }
 
 ;------------------------------------------------------------------------------------------------------
-/*
-; Заполнение для теста
-LV.Add(, "", "")
-LV.Add(, "Проверка шрифта на читаемость", "")
-LV.Add(, "Шрифт: Segue,  10", "")
-LV.Add(, "......................................", "")
-LV.Add(, "0O08B389 1lI1l1Ii b6b ч4чб6б  З3З", "")
-LV.Add(, "unusual autumn million Illustration", "")
-LV.Add(, "clean viola shrnoen running yarn", "")
-LV.Add(, "люминисцент шиншилла осенний расщелина", "")
-LV.Add(, "KpuBbleMakapoHbl JIoxyLLIka IIbl}|{ LLblIIJIeHoKuLLblraH", "")
-LV.Add(, "......................................", "")
-Loop 9 {
-    LV.Add(, "Добро пожаловать в мир Lineage IIl  # " A_Index, "")
+if (DEBUG_MODE) {
+    ; Заполнение для теста
+    LV.Add(, "", "")
+    LV.Add(, "Проверка шрифта на читаемость", "")
+    LV.Add(, "Шрифт: Segue,  10", "")
+    LV.Add(, "......................................", "")
+    LV.Add(, "0O08B389 1lI1l1Ii b6b ч4чб6б  З3З", "")
+    LV.Add(, "unusual autumn million Illustration", "")
+    LV.Add(, "clean viola shrnoen running yarn", "")
+    LV.Add(, "люминисцент шиншилла осенний расщелина", "")
+    LV.Add(, "KpuBbleMakapoHbl JIoxyLLIka IIbl}|{ LLblIIJIeHoKuLLblraH", "")
+    LV.Add(, "......................................", "")
+    Loop 9 {
+        LV.Add(, "Добро пожаловать в мир Lineage IIl  # " A_Index, "")
+    }
+    global LineCounter := 20
 }
-global LineCounter := 20
-*/
-global LineCounter := 1
+else {
+    global LineCounter := 1
+}
 
 DisableFontAntialiasing(hwnd) {
     ; Получаем текущий шрифт элемента
@@ -230,6 +260,7 @@ A_MaxHotkeysPerInterval := 200 ; чтобы не выводилась ошибк
 
 global IsUserScrolling := false
 
+CoordMode "Mouse", "Client"
 
 #HotIf IsMouseOverChat()
 
@@ -333,7 +364,7 @@ ReceiveData(wParam, lParam, msg, hwnd) {
     textPtr := NumGet(lParam, A_PtrSize * 2, "UPtr") ; lpData (указатель на строку)
     textString := StrGet(textPtr, "UTF-16")
 
-    ;OutputDebug("AHK ReceiveData: msgId=" msgId " text=" textString)
+    ;(DEBUG_MODE) && LogDebug(Format("`nReceiveData: msgId=" msgId " text=" textString)
 
     idStr := "" msgId                                       ; ключи в MsgColorMap — строки, поэтому приводим msgId тоже к строковому типу данных
     if (!MsgColorMap.Has(idStr) || (textString = "")) {     ; отфильтровываем и для случая не заданного цвета в конфиге, и для пустой строки в sysmsg-e.txt
@@ -393,7 +424,7 @@ ProcessQueue() {
     }
 }
 
-
+; Функция обработки (разбиения) длинной строки
 AddLongMsg(text, color, maxChars) {
     global LV, LV_ColorManager
 
@@ -423,6 +454,7 @@ AddLongMsg(text, color, maxChars) {
         LV_ColorManager.Row(LV.GetCount(), "", color)
     }
 }
+
 
 ; Производительности для отображаем только часть сообщений, остальные удаляем. Используем временный массив для сохранения данных и заполнение таблицы с нуля, так как удаление из стандартного ListView возможно только построчно, а каждое удаление из начала таблицы вызывало бы перестроение всей таблицы и необходимость синхронизации цветов, так как Classic_LV_Colors автоматически этого не делает.
 OptimizeListView(LV, CLV) {
@@ -492,9 +524,36 @@ OnWindowDestroy(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dw
 }
 
 
-OnExit(ExitFunc)
+
+
+
+ErrorFunc(Exception, Mode) {
+    global LogFile
+
+    if (DEBUG_MODE && LogFile) {
+        errMsg := "`n[КРИТИЧЕСКАЯ ОШИБКА] " FormatTime(, "yyyy-MM-dd HH:mm:ss") "`n"
+        errMsg .= "Сообщение: " Exception.Message "`n"
+        errMsg .= "Файл: " Exception.File "`n"
+        errMsg .= "Строка: " Exception.Line "`n"
+        errMsg .= "Причина: " Exception.What "`n"
+        errMsg .= "*****************************************************************`n"
+
+        LogFile.Write(errMsg)
+        LogFile.Read(0)
+    }
+
+    ; Возвращаем 0, чтобы AHK показал стандартное диалоговое окно ошибки и завершил работу.
+    ; Если вернуть 1, скрипт попытается продолжить работу, проигнорировав ошибку.
+    return 0
+}
 
 ExitFunc(ExitReason, ExitCode) {
+    global LogFile
+
+    if (DEBUG_MODE && LogFile) {
+		LogDebug("--- Скрипт завершен (Причина: " ExitReason ")`n*****************************************************************")
+		LogFile.Close()
+	}
     ;global FontFile
     ;DllCall("RemoveFontResource", "Str", FontFile)
     ;DllCall("SendMessage", "Ptr", 0xFFFF, "UInt", 0x001D, "Ptr", 0, "Ptr", 0)
