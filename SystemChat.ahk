@@ -134,8 +134,8 @@ LV.ModifyCol(2, 0)
 
 DisableFontAntialiasing(LV.Hwnd)
 
-LV_STR_MAX := 4000 ; по достижении этого количества строк частично очищаем таблицу от старых событий
-LV_STR_TO_SAVE := 2500 ; количество сохраняемых строк
+LV_STR_MAX := 2500 ; по достижении этого количества строк частично очищаем таблицу от старых событий
+LV_STR_TO_SAVE := 1500 ; количество сохраняемых строк
 
 global LV_ColorManager := LV_Colors(LV)
 
@@ -311,28 +311,21 @@ ScrollLV(Rows) {
 }
 
 ; Функция получения индекса нижней видимой строки
+; LVM_GETTOPINDEX := 0x1027 индекс самой верхней видимой строки (WinAPI возвращает 0-based, для работы с таблицей AHKv2 (1-based) надо прибавить 1, но так как потом будем вычитать для расчета нижнего, то опускаем это действие
+; LVM_GETCOUNTPERPAGE := 0x1028 количество строк, которые физически помещается в видимую область
+; Нижний видимый индекс — это верхний + количество строк на страницу - 1
+
+RowsPerPage := SendMessage(0x1028, 0, 0, LV)
+
 LV_GetBottomIndex(LVControl) {
-    ; LVM_GETTOPINDEX := 0x1027 индекс самой верхней видимой строки (WinAPI возвращает 0-based, для работы с таблицей AHKv2 (1-based) надо прибавить 1, но так как потом будем вычитать для расчета нижнего, то опускаем это действие
-    ; LVM_GETCOUNTPERPAGE := 0x1028 количество строк, которые физически помещается в видимую область
-
     TopIndex := SendMessage(0x1027, 0, 0, LVControl) ; + 1
-    CountPerPage := SendMessage(0x1028, 0, 0, LVControl)
-
-    ; Нижний видимый индекс — это верхний + количество строк на страницу - 1
-    return TopIndex + CountPerPage ; - 1
+    return TopIndex + RowsPerPage ; - 1
 }
 
 
 ; Функция проверки положения мыши
 IsMouseOverChat() {
-
-    ;CoordMode "Mouse", "Screen"
-    ;MouseGetPos &MouseX, &MouseY
-    ; cross-process метод
-    ;ControlHwnd := DllCall("WindowFromPoint", "int64", (MouseY << 32) | (MouseX & 0xFFFFFFFF), "Ptr")
-
     MouseGetPos(,, &WindowHwnd, )
-
     return (WindowHwnd == SysChat.Hwnd)
 }
 
@@ -417,7 +410,7 @@ ProcessQueue() {
     }
 
     LV.Opt("+Redraw")
-    LV.Redraw()
+    ;LV.Redraw()
 
     if (!IsUserScrolling) {
         LV.Modify(CurrentRow, "Vis")
