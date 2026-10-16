@@ -806,8 +806,12 @@ SaveConfig(*) {
         return false
     }
 
+	strDebugMode := (DebugMode) ? "DEBUG_MODE=true" : "DEBUG_MODE=false"
+
     try {
-        IniWrite(strChatSizeAndPos, filepath, "AdditionalChat")
+        IniWrite(strDebugMode, filepath, "Options")
+        FileAppend("`n", filepath)
+		IniWrite(strChatSizeAndPos, filepath, "AdditionalChat")
         FileAppend("`n", filepath)
         IniWrite(strCellsColors, filepath, "CustomColors")
         FileAppend("`n", filepath)
