@@ -102,32 +102,42 @@ DefaultTextColor := "0xB09979"
 DefaultBackColor := "0x1D1D1D"
 
 
-; 0. Создаем окно-фон
-;global СBack := Gui("-SysMenu -Caption -Border -DPIScale")
-;Background := []
-;Background.hwnd := ImageShow(ChatBkgrndPath,, [0, 0, 345, 498], 0x40000000 | 0x10000000,, SysChat.hwnd, False) ; Флаги: 0x40000000 (WS_CHILD) | 0x10000000 (WS_VISIBLE) | 0x08000000 (WS_DISABLED)
 
-; 1. Создаем основное окно-контейнер
+
+
+
+
+
+
+; 1. Создаем окно-фон
+global СBack := Gui("-SysMenu -Caption -Border -DPIScale")
+СBack.Title := "L2_SystemChat_Bkgrnd"
+СBack.BackColor := "" DefaultBackColor
+;СBack.BackColor := "ABCDEF"
+;WinSetTransColor("ABCDEF", СBack) ;Делаем прозрачным по цвету "0xABCDEF"
+
+BChwnd := ImageShow(A_ScriptDir "\resources\CustomSystemChatBkgrnd.png",, [0, 0, 345, ChatHeight], 0x40000000 | 0x10000000 | 0x08000000,, СBack.hwnd, False) ; Флаги: 0x40000000 (WS_CHILD) | 0x10000000 (WS_VISIBLE) | 0x08000000 (WS_DISABLED)
+
+
+; 2. Создаем основное окно-контейнер
 global SysChat := Gui("-SysMenu -Caption -Border -DPIScale") ; +E0x80000 = WS_EX_LAYERED
 SysChat.Title := "L2_SystemChat" ; это имя прописано в .dll
 SysChat.BackColor := "" DefaultBackColor
+;SysChat.BackColor := "ABCDEF"
+;WinSetTransColor("ABCDEF", SysChat) ;Делаем прозрачным по цвету "0xABCDEF"
 
-BChwnd := ImageShow(A_ScriptDir "\resources\CustomSystemChatBkgrnd.png",, [0, 0, 345, ChatHeight], 0x40000000 | 0x10000000 | 0x08000000,, SysChat.hwnd, False) ; Флаги: 0x40000000 (WS_CHILD) | 0x10000000 (WS_VISIBLE) | 0x08000000 (WS_DISABLED)
-
-; 2. Создаем дочернее окно-маску меньшего размера для сокрытия элементов контроллов (скролл-баров)
-global Mask := Gui("-Caption -Border +Parent" SysChat.Hwnd " +E0x20000")
-Mask.BackColor := "ABCDEF"
-WinSetTransColor("ABCDEF", Mask) ;Делаем прозрачным по цвету "0xABCDEF"
 
 GAMECHAT_WIDTH := 345
-VisibleW := GAMECHAT_WIDTH - 20 - 5 ; 20px условный скроллбар слева, 5px для выравнивания
-VisibleH := ChatHeight - 5
+VisibleW := GAMECHAT_WIDTH - (24 + 2) ; 24px условный скроллбар слева
+VisibleH := ChatHeight - 4
+;SysChat.SetFont("s12 q3", "Segoe UI")
 
 
-; 3. Создаем ListView внутри маски.
-; Больше маски на 20-25 пикселей, чтобы скроллбар ушел за видимый край
+
+; 3. Создаем ListView более широкий чем сумма ширин столбцов, чтобы скроллбар ушел за видимый край
 ; Второй столбец делаем нулевого размера (скрытым)
-global LV := Mask.AddListView("x0 y0 w" (VisibleW + 25) " h" (VisibleH + 20) " -Hdr -Multi -E0x200 +LV0x14000 BackgroundABCDEF c" DefaultTextColor, ["Msg", "Color"])
+global LV := SysChat.AddListView("x0 y0 w" (VisibleW + 45) " h" (VisibleH) " -Hdr -Multi -E0x200 +LV0x14000 Background" DefaultBackColor " c" DefaultTextColor, ["Msg", "Color"])
+
 LV.ModifyCol(1, VisibleW + 25)
 LV.ModifyCol(2, 0)
 
@@ -152,11 +162,11 @@ if L2Hwnd {
         DllCall("SetParent", "ptr", SysChat.Hwnd, "ptr", L2Hwnd) ; TODO: NoIntegr не менять, в текущей реализации окна метод через SetParent не работает
     }
     else {
-        SysChat.Opt("+Owner" L2Hwnd)
+        СBack.Opt("+Owner" L2Hwnd)
+        SysChat.Opt("+Owner" СBack.HWnd)
     }
-    SysChat.Show("NA x" ChatPosX " y" ChatPosY " w345 h" ChatHeight)
-    ; Отображаем маску внутри главного GUI, смещение y-?? чтобы верхняя строка не влезала. "Огрызок" строки будет служить индикатором того, что отображается не весь чат, что выше есть еще сообщения.
-    Mask.Show("x21 y1 w" (VisibleW + 2) " h" (VisibleH + 2))
+    СBack.Show("NA x" ChatPosX " y" ChatPosY " w345 h" ChatHeight)
+    SysChat.Show("NA x" ChatPosX+24 " y" ChatPosY+2 " w" VisibleW " h" VisibleH)
 }
 else {
     ExitApp
@@ -166,10 +176,9 @@ else {
 ; --- КНОПКИ УПРАВЛЕНИЯ ---
 
 ; Кнопка Свернуть/Развернуть чат.
-SysChat.SetFont("s14 w700", "Marlett")
-btnHide := SysChat.AddText("x2 y2 w16 h14 +Center Background", "0")
-btnHide.SetFont("c" DefaultTextColor " s10 w900")
-SysChat.SetFont("s10 w400", "Segoe UI")
+СBack.SetFont("s10", "Marlett")
+btnHide := СBack.AddText("x2 y2 w16 h14 +Center Background", "0")
+btnHide.SetFont("c" DefaultTextColor)
 btnHide.OnEvent("Click", (*) => MinimizeRestore())
 
 global isHidden := false
@@ -178,32 +187,31 @@ MinimizeRestore(*) {
     global isHidden
 
     if (isHidden) {     ; если чат был скрыт - восстанавливаем отображение и цвета
-        SysChat.SetFont("s14 w700", "Marlett")
         btnHide.Text := "0"
-        SysChat.SetFont("s10 w400", "Segoe UI")
         btnHide.Opt("-Border Background" DefaultBackColor)
         btnLastStr.SetFont("c" DefaultTextColor)
-        WinSetTransColor(DefaultBackColor " 255", SysChat)
-        WinSetTransColor("Off", SysChat)
-        Mask.Show()
+        WinSetTransColor(DefaultBackColor " 255", СBack)
+        WinSetTransColor("Off", СBack)
+        SysChat.Show()
         WinShow(BChwnd)
-        WinRedraw(SysChat.Hwnd)
+        WinRedraw(СBack.Hwnd)
         isHidden := false
     }
     else {
         btnHide.Text := "2"
         btnHide.Opt("+Border Background000000")
         btnLastStr.SetFont("c" DefaultBackColor)
-        WinSetTransColor(DefaultBackColor, SysChat)
-        Mask.Hide()
+        WinSetTransColor(DefaultBackColor, СBack)
+        SysChat.Hide()
         WinHide(BChwnd)
         isHidden := true
     }
 }
 
 ; Кнопка прокрутки сообщений в самый низ
-btnLastStr := SysChat.AddText("x3 y" ChatHeight-18 " w16 h14 +Center Background +Hidden", "▼")  ; ↴ ▼ ▲
-btnLastStr.SetFont("c" DefaultTextColor " s10 w900")
+СBack.SetFont("s10 w900 q3", "Segoe UI")
+btnLastStr := СBack.AddText("x3 y" ChatHeight-18 " w16 h14 +Center Background +Hidden", "▼")  ; ↴ ▼ ▲
+btnLastStr.SetFont("c" DefaultTextColor)
 
 btnLastStr.OnEvent("Click", (*) => ScrollToLastStr())
 
