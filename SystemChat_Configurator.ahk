@@ -131,7 +131,7 @@ btnLoad.GetPos(&bX, &bY)
 ddlFont := MyGui2.Add("DropDownList", "x" bX+100 " yp+2 w100", ddlFontOpts)
 ddlFont.Text := "Segoe UI"
 
-ddlFontSize := MyGui2.Add("DropDownList", "x+3 yp w50", ["10", "11", "12", "13", "14"])
+ddlFontSize := MyGui2.Add("DropDownList", "x+3 yp w50", ["8" , "9" , "10", "11", "12", "13", "14"])
 ddlFontSize.Text := 10
 
 
@@ -754,14 +754,17 @@ SaveConfig(*) {
 
     filepath := A_ScriptDir "\ChatConfig.ini"
 
-    bothChatsHeight := 5 + GameChatHeight + Round(GameChatHeight * (Float(StrReplace(ddlWsize.Text, "%")) / 100))
+    wantedChatHeight := Round(GameChatHeight * (Float(StrReplace(ddlWsize.Text, "%")) / 100))
+    size := CalculateLVHSize(wantedChatHeight)
+    ChatRows   := size.rows
+    ChatHeight := size.height + 4   ; 2px + 2px на контур окна.
+
+    bothChatsHeight := 5 + GameChatHeight + ChatHeight
     if (VResolY - bothChatsHeight > 0) {
         ChatPosY := VResolY - bothChatsHeight
-        ChatHeight := Round(GameChatHeight * (Float(StrReplace(ddlWsize.Text, "%")) / 100))
     }
     else {
         ChatPosY := 2
-        ChatHeight := Round(GameChatHeight * (Float(StrReplace(ddlWsize.Text, "%")) / 100))
     }
 
     if ChatPosManual {
@@ -782,7 +785,7 @@ SaveConfig(*) {
     else {
         strChatSizeAndPos := "ChatPosManual=false`n"
     }
-    strChatSizeAndPos .= "ChatSize=" ddlWSize.Text "`nChatPosX=" ChatPosX "`nChatPosY=" ChatPosY "`nChatHeight=" ChatHeight "`nFont=" ddlFont.Text "`nFontSize=" ddlFontSize.Text "`nFontPath=" fontsMap[ddlFont.Text]
+    strChatSizeAndPos .= "ChatSize=" ddlWSize.Text "`nChatPosX=" ChatPosX "`nChatPosY=" ChatPosY "`nChatHeight=" ChatHeight "`nChatRows=" ChatRows "`nFont=" ddlFont.Text "`nFontSize=" ddlFontSize.Text "`nFontPath=" fontsMap[ddlFont.Text]
 
     strCellsColors := ""
     for obj in mColors {
@@ -806,12 +809,12 @@ SaveConfig(*) {
         return false
     }
 
-	strDebugMode := (DebugMode) ? "DEBUG_MODE=true" : "DEBUG_MODE=false"
+    strDebugMode := (DebugMode) ? "DEBUG_MODE=true" : "DEBUG_MODE=false"
 
     try {
         IniWrite(strDebugMode, filepath, "Options")
         FileAppend("`n", filepath)
-		IniWrite(strChatSizeAndPos, filepath, "AdditionalChat")
+        IniWrite(strChatSizeAndPos, filepath, "AdditionalChat")
         FileAppend("`n", filepath)
         IniWrite(strCellsColors, filepath, "CustomColors")
         FileAppend("`n", filepath)
@@ -900,6 +903,50 @@ WindowsColorPicker(defaultColor := 0xFFFFFF, hwndParent := 0) {
     return Format("{:06X}", resRGB)
 }
 
+
+;------------------------------------------------------------------------------------------------------------------------------------------------------------
+; Создание временного окна с таблицей сообщений и расчет параметров строк для определения окончательных размеров окна системного чата
+
+CalculateLVHSize(height) {
+
+    tmpGUI := Gui("-SysMenu -Caption -Border -DPIScale")
+    tmpGUI.Title := "tmpGUI"
+
+
+    LVTemp := tmpGUI.AddListView("x0 y0 -Hdr -Multi")
+    LVTemp.ModifyCol(1, 365)
+    LVTemp.ModifyCol(2, 0)
+    LVTemp.Add(, "Test", "")
+
+
+    ; Создаем буфер под структуру RECT (4 целых числа по 4 байта = 16 байт)
+    RECT := Buffer(16, 0)
+    ; LVIR_BOUNDS = 0 (получить границы всего элемента целиком)
+    NumPut("int", 0, RECT, 0)
+
+    ; 0x100E = LVM_GETITEMRECT, wParam = 0 (индекс первой строки)
+    SendMessage(0x100E, 0, RECT.Ptr, LVTemp.Hwnd)
+
+    ; Извлекаем координаты: Top (байты 4-7) и Bottom (байты 12-15)
+    Top := NumGet(RECT, 4, "int")
+    Bottom := NumGet(RECT, 12, "int")
+
+    LineHeight := Bottom - Top
+
+    rowCount := Round(height/LineHeight)
+    if (rowCount < 5) {
+        rowCount := 5
+        MsgBox("Размер окна доп. чата не может быть меньше 5 строк. `nПринудительно установлено значение 5 строк", "Error", "Icon! Owner" MyGui2.Hwnd)
+    }
+
+    LVHSize := (rowCount) * LineHeight
+
+    LVTemp.Delete()
+    tmpGUI.Destroy()
+
+    return {rows: rowCount, height: LVHSize}
+}
+
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 mTextureNames := [
@@ -959,7 +1006,7 @@ ExportTextures() {
     return !wasErrors
 }
 
-; Создание PNG файла фона
+; Создание PNG файла фона из элементов текустур игры
 DrawChatBackPNG(targetPath, targetHeight, HeadPath, BodyPath, BottomPath) {
     wasError := false
 
