@@ -8,7 +8,7 @@
 ; Проверяем основной конфиг файл
 global configPath := A_ScriptDir "\ChatConfig.ini"
     if !FileExist(configPath) {
-        MsgBox("AHK: ChatConfig.ini not found: " configPath, "Error", 0x10)
+        MsgBox("ChatConfig.ini not found: " configPath, "Error", 0x10)
         ExitApp
     }
 
@@ -19,7 +19,7 @@ DEBUG_MODE := (IniRead(configPath, "Options", "DEBUG_MODE", "false") = "true")
 
 if (DEBUG_MODE){
     global LogFile := FileOpen(A_ScriptDir "\debug_log.txt", "a")
-    SetTimer(() => LogFile.Read(0), 10000)
+    SetTimer(() => LogFile.Read(0), 10000) ; условным чтением 0 байт вызываем сброс накопленных данных из кэша в файл.
     OnError(ErrorFunc)
 }
 
@@ -65,6 +65,7 @@ catch Error as err {
 
 global NoIntegr := true
 
+
 ;------------------------------------------------------------------------------------------------------
 
 ; Загружаем конфиг фильтрации ID -> Color
@@ -98,56 +99,43 @@ LoadMsgFilterConfig() {
     (DEBUG_MODE) && LogDebug(Format("Loaded " MsgColorMap.Count " ID->Color mappings from ChatConfig.ini"))
 }
 
+
 DefaultTextColor := "0xB09979"
 DefaultBackColor := "0x1D1D1D"
+DefaultTransColor := "0xABCDEF"
 
-
-
-
-
-
-
-
-
-; 1. Создаем окно-фон
-global СBack := Gui("-SysMenu -Caption -Border -DPIScale")
-СBack.Title := "L2_SystemChat_Bkgrnd"
-СBack.BackColor := "" DefaultBackColor
-;СBack.BackColor := "ABCDEF"
-;WinSetTransColor("ABCDEF", СBack) ;Делаем прозрачным по цвету "0xABCDEF"
-
-BChwnd := ImageShow(A_ScriptDir "\resources\CustomSystemChatBkgrnd.png",, [0, 0, 345, ChatHeight], 0x40000000 | 0x10000000 | 0x08000000,, СBack.hwnd, False) ; Флаги: 0x40000000 (WS_CHILD) | 0x10000000 (WS_VISIBLE) | 0x08000000 (WS_DISABLED)
-
-
-; 2. Создаем основное окно-контейнер
-global SysChat := Gui("-SysMenu -Caption -Border -DPIScale") ; +E0x80000 = WS_EX_LAYERED
-SysChat.Title := "L2_SystemChat" ; это имя прописано в .dll
-SysChat.BackColor := "" DefaultBackColor
-;SysChat.BackColor := "ABCDEF"
-;WinSetTransColor("ABCDEF", SysChat) ;Делаем прозрачным по цвету "0xABCDEF"
-
+global BlackBkgrnd := (IniRead(configPath, "AdditionalChat", "BlackBkgrnd", "false") = "true")
+(BlackBkgrnd) ? (BkColor := DefaultBackColor) : (BkColor := DefaultTransColor)
 
 GAMECHAT_WIDTH := 345
-VisibleW := GAMECHAT_WIDTH - (24 + 2) ; 24px условный скроллбар слева
-VisibleH := ChatHeight - 4
-;SysChat.SetFont("s12 q3", "Segoe UI")
+VisibleW := GAMECHAT_WIDTH - (24 + 2) ; 24px - условный скроллбар слева, 2px - толщина контура (обводки) окна
+VisibleH := ChatHeight - 4 ; 2px сверху и 2px снизу на контур окна
 
 
 
-; 3. Создаем ListView более широкий чем сумма ширин столбцов, чтобы скроллбар ушел за видимый край
-; Второй столбец делаем нулевого размера (скрытым)
-global LV := SysChat.AddListView("x0 y0 w" (VisibleW + 45) " h" (VisibleH) " -Hdr -Multi -E0x200 +LV0x14000 Background" DefaultBackColor " c" DefaultTextColor, ["Msg", "Color"])
+; 1. Окно для фоновой картинки и кнопок управления
+global wBkgrnd := Gui("-SysMenu -Caption -Border -DPIScale")
+wBkgrnd.Title := "L2_SystemChat_Bkgrnd"
+wBkgrnd.BackColor := "" BkColor
+WinSetTransColor("ABCDEF", wBkgrnd) ; делаем прозрачным по цвету "0xABCDEF"
 
-LV.ModifyCol(1, VisibleW + 25)
-LV.ModifyCol(2, 0)
+ChatBkgrnd := ImageShow(A_ScriptDir "\resources\CustomSystemChatBkgrnd.png",, [0, 0, GAMECHAT_WIDTH, ChatHeight], 0x40000000 | 0x10000000 | 0x08000000,, wBkgrnd.hwnd, False) ; Флаги: 0x40000000 (WS_CHILD) | 0x10000000 (WS_VISIBLE) | 0x08000000 (WS_DISABLED)
 
 
-DisableFontAntialiasing(LV.Hwnd)
 
-LV_STR_MAX := 2500 ; по достижении этого количества строк частично очищаем таблицу от старых событий
-LV_STR_TO_SAVE := 1500 ; количество сохраняемых строк
+; 2. Отдельное окно для таблицы (чтобы не пытаться управлять прозрачностью слоев в рамках одного gui. Это окно будем отрисовывать поверх фоновой картинки)
+global wSysChat := Gui("-SysMenu -Caption -Border -DPIScale +E0x80000") ; +E0x80000 = WS_EX_LAYERED
+wSysChat.Title := "L2_SystemChat" ; это имя прописано в .dll
+;wSysChat.SetFont("s10 q3", "Segoe UI")
+wSysChat.BackColor := "" BkColor
+WinSetTransColor("ABCDEF", wSysChat)
 
-global LV_ColorManager := LV_Colors(LV)
+
+
+; 3. Отдельное прозрачное окно для перехвата кликов по области
+global wCtrls := Gui("-SysMenu -Caption -Border -DPIScale")
+wCtrls.Title := "L2_SystemChat_CtrlsZone"
+
 
 
 
@@ -159,69 +147,34 @@ global L2Hwnd := WinExist(L2Class)
 
 if L2Hwnd {
     if !NoIntegr {
-        DllCall("SetParent", "ptr", SysChat.Hwnd, "ptr", L2Hwnd) ; TODO: NoIntegr не менять, в текущей реализации окна метод через SetParent не работает
+        DllCall("SetParent", "ptr", wSysChat.Hwnd, "ptr", L2Hwnd) ; TODO: NoIntegr не менять, в текущей реализации окна метод через SetParent не работает
     }
     else {
-        СBack.Opt("+Owner" L2Hwnd)
-        SysChat.Opt("+Owner" СBack.HWnd)
+        wBkgrnd.Opt("+Owner" L2Hwnd)
+        wSysChat.Opt("+Owner" wBkgrnd.HWnd)
+        wCtrls.Opt("+Owner" wBkgrnd.HWnd)
     }
-    СBack.Show("NA x" ChatPosX " y" ChatPosY " w345 h" ChatHeight)
-    SysChat.Show("NA x" ChatPosX+24 " y" ChatPosY+2 " w" VisibleW " h" VisibleH)
+    wBkgrnd.Show("NA x" ChatPosX " y" ChatPosY " w" GAMECHAT_WIDTH " h" ChatHeight)
+    wSysChat.Show("NA x" ChatPosX+24 " y" ChatPosY+2 " w" VisibleW " h" VisibleH)
+    wCtrls.Show("NA x" ChatPosX+3 " y" ChatPosY+3 " w18 h" VisibleH-3) ; 3px отступ от края , 18px - на 1px слева и справа больше, чем иконки (16px) кнопок
+    WinSetTransparent(1, "L2_SystemChat_CtrlsZone") ; wCtrls
 }
 else {
     ExitApp
 }
 
 
-; --- КНОПКИ УПРАВЛЕНИЯ ---
+; Создаем ListView более широкий, чем сумма ширин столбцов, чтобы скроллбар ушел за видимый край
+; Второй столбец делаем нулевого размера (скрытым)
+global LV := wSysChat.AddListView("x0 y0 w" (VisibleW + 45) " h" (VisibleH) " -Hdr -Multi -E0x200 +LV0x14000 Background" BkColor " c" DefaultTextColor, ["Msg", "Color"]) ; LVS_EX_DOUBLEBUFFER = 0x00010000 ,  LVS_EX_JUSTIFYCOLUMNS = 0x00004000 ,  WS_EX_CLIENTEDGE = E0x200
+LV.ModifyCol(1, VisibleW + 25)
+LV.ModifyCol(2, 0)
 
-; Кнопка Свернуть/Развернуть чат.
-СBack.SetFont("s10", "Marlett")
-btnHide := СBack.AddText("x2 y2 w16 h14 +Center Background", "0")
-btnHide.SetFont("c" DefaultTextColor)
-btnHide.OnEvent("Click", (*) => MinimizeRestore())
+LV.DefineProp("Shadows", {Value: (IniRead(configPath, "AdditionalChat", "UseShadows", "true") = "true")})
+DisableFontAntialiasing(LV.Hwnd)
 
-global isHidden := false
+global LV_ColorManager := LV_Colors(LV)
 
-MinimizeRestore(*) {
-    global isHidden
-
-    if (isHidden) {     ; если чат был скрыт - восстанавливаем отображение и цвета
-        btnHide.Text := "0"
-        btnHide.Opt("-Border Background" DefaultBackColor)
-        btnLastStr.SetFont("c" DefaultTextColor)
-        WinSetTransColor(DefaultBackColor " 255", СBack)
-        WinSetTransColor("Off", СBack)
-        SysChat.Show()
-        WinShow(BChwnd)
-        WinRedraw(СBack.Hwnd)
-        isHidden := false
-    }
-    else {
-        btnHide.Text := "2"
-        btnHide.Opt("+Border Background000000")
-        btnLastStr.SetFont("c" DefaultBackColor)
-        WinSetTransColor(DefaultBackColor, СBack)
-        SysChat.Hide()
-        WinHide(BChwnd)
-        isHidden := true
-    }
-}
-
-; Кнопка прокрутки сообщений в самый низ
-СBack.SetFont("s10 w900 q3", "Segoe UI")
-btnLastStr := СBack.AddText("x3 y" ChatHeight-18 " w16 h14 +Center Background +Hidden", "▼")  ; ↴ ▼ ▲
-btnLastStr.SetFont("c" DefaultTextColor)
-
-btnLastStr.OnEvent("Click", (*) => ScrollToLastStr())
-
-ScrollToLastStr() {
-    global IsUserScrolling
-
-    IsUserScrolling := false
-    LV.Modify(LV.GetCount(), "Vis")
-    btnLastStr.Opt("+Hidden")
-}
 
 ;------------------------------------------------------------------------------------------------------
 if (DEBUG_MODE) {
@@ -261,26 +214,79 @@ DisableFontAntialiasing(hwnd) {
     DllCall("SendMessage", "ptr", hwnd, "uint", 0x0030, "ptr", newFont, "ptr", 1) ; WM_SETFONT
 }
 
+
 ;------------------------------------------------------------------------------------------------------
-; Автоматическая прокрутка чата с получением нового события только в том случае, если чат в самом низу (проверяем, видна ли нижняя строчка через запрос индекса верхней видимой строки и расчет индекса нижней строки)
+; Кнопка Свернуть/Развернуть чат.
+
+HideIcon := ImageShow(A_ScriptDir "\resources\HideIcon.png",, [4, 3, 16, 16], 0x40000000 | 0x10000000 | 0x08000000,, ChatBkgrnd, False)
+RestoreIcon := ImageShow(A_ScriptDir "\resources\RestoreIcon.png",, [4, 3, 16, 16], 0x40000000 | 0x10000000 | 0x08000000,, wBkgrnd.hwnd, False)
+WinHide(RestoreIcon)
+
+fbtnHideRestore := wCtrls.AddText("x3 y3 w16 h14 +Center Background", " ") ; fake кнопка для перехвата клика
+fbtnHideRestore.OnEvent("Click", MinimizeRestore)
+
+global isHidden := false
+
+MinimizeRestore(*) {
+    global isHidden
+
+    if (isHidden) {     ; если чат был скрыт - восстанавливаем
+        ;btnLastStr.SetFont("c" DefaultTextColor)
+        wSysChat.Show()
+        WinShow(ChatBkgrnd)
+        WinHide(RestoreIcon)
+        WinShow(HideIcon)
+        WinRedraw(wBkgrnd.Hwnd)
+        wCtrls.Move(ChatPosX+3, ChatPosY+3, 18, VisibleH-3)
+        isHidden := false
+    }
+    else {      ; скрываем чат
+        ;btnLastStr.SetFont("c" DefaultTransColor)
+        wSysChat.Hide()
+        WinHide(ChatBkgrnd)
+        WinHide(HideIcon)
+        WinShow(RestoreIcon)
+        wCtrls.Move(ChatPosX+3, ChatPosY+3, 18, 18)
+        isHidden := true
+    }
+}
+
+; Кнопка прокрутки сообщений в самый низ
+ScrollDownIcon := ImageShow(A_ScriptDir "\resources\ScrollDownIcon.png",, [3, ChatHeight - 20, 16, 16], 0x40000000 | 0x10000000 | 0x08000000,, ChatBkgrnd, False)
+WinHide(ScrollDownIcon)
+fbtnScrollBottom := wCtrls.AddText("x3 y" ChatHeight-18 " w16 h14 +Center Background", " ") ; fake кнопка для перехвата клика
+fbtnScrollBottom.OnEvent("Click", ScrollToLastStr)
+
+
+global IsUserScrolling := false ; флаг, что чат прокручен вверх и что надо показать кнопку "прокрутить вниз"
+
+ScrollToLastStr(*) {
+    global IsUserScrolling
+
+    IsUserScrolling := false
+    LV.Modify(LV.GetCount(), "Vis")
+    WinHide(ScrollDownIcon)
+}
+
+
 A_HotkeyInterval := 2000
 A_MaxHotkeysPerInterval := 200 ; чтобы не выводилась ошибка, если быстро вращать колесико; default 70
 
-global IsUserScrolling := false
-
 CoordMode "Mouse", "Client"
 
-#HotIf IsMouseOverChat()
 
-    *WheelUp:: {
+#HotIf WinActive("L2_SystemChat_CtrlsZone") || WinActive("L2_SystemChat_Bkgrnd")
+
+    ~WheelUp:: {
         global IsUserScrolling
 
         IsUserScrolling := true
-        btnLastStr.Opt("-Hidden")
-        ScrollLV(-1)
+        ;btnLastStr.Opt("-Hidden")
+        WinShow(ScrollDownIcon)
+        ScrollLV(-2)
     }
 
-    *WheelDown:: {
+    ~WheelDown:: {
         global IsUserScrolling
 
         ScrollLV(1)
@@ -289,12 +295,10 @@ CoordMode "Mouse", "Client"
         BottomIndex := LV_GetBottomIndex(LV)
         TotalRows := LV.GetCount()
 
-        ;ToolTip("last vis string: " BottomIndex "`nTotal strings: " TotalRows, 10, 10)
-        ;SetTimer(() => ToolTip(), -2000)
-
         if (BottomIndex >= TotalRows) {
             IsUserScrolling := false
-            btnLastStr.Opt("+Hidden")
+            ;btnLastStr.Opt("+Hidden")
+            WinHide(ScrollDownIcon)
         } else {
             IsUserScrolling := true
         }
@@ -303,27 +307,16 @@ CoordMode "Mouse", "Client"
 #HotIf
 
 
-; Функция прокрутки построчно
-ScrollLV(Rows) {
-    ; WM_VSCROLL = 0x0115
-    ; SB_LINEUP = 0
-    ; SB_LINEDOWN = 1
-
-    if (Rows > 0) {
-        loop Rows
-            PostMessage(0x0115, 1, 0, LV.Hwnd)
-    } else {
-        loop Abs(Rows)
-            PostMessage(0x0115, 0, 0, LV.Hwnd)
-    }
-}
-
-; Функция получения индекса нижней видимой строки
+;------------------------------------------------------------------------------------------------------
+; Автоматическая прокрутка чата с получением нового события только в том случае, если чат в самом низу (проверяем, видна ли нижняя строчка через запрос индекса верхней видимой строки и расчет индекса нижней строки)
 ; LVM_GETTOPINDEX := 0x1027 индекс самой верхней видимой строки (WinAPI возвращает 0-based, для работы с таблицей AHKv2 (1-based) надо прибавить 1, но так как потом будем вычитать для расчета нижнего, то опускаем это действие
 ; LVM_GETCOUNTPERPAGE := 0x1028 количество строк, которые физически помещается в видимую область
 ; Нижний видимый индекс — это верхний + количество строк на страницу - 1
 
-RowsPerPage := SendMessage(0x1028, 0, 0, LV)
+LV.GetPos(,,, &LV_ClientHeight)
+global RowsPerPage := SendMessage(0x1028, 0, 0, LV)
+global LV_ItemHeight := LV_ClientHeight / RowsPerPage
+
 
 LV_GetBottomIndex(LVControl) {
     TopIndex := SendMessage(0x1027, 0, 0, LVControl) ; + 1
@@ -331,10 +324,16 @@ LV_GetBottomIndex(LVControl) {
 }
 
 
+ScrollLV(Rows) {
+    ; LVM_SCROLL = 0x1014
+    DllCall("SendMessage", "Ptr", LV.Hwnd, "UInt", 0x1014, "Ptr", 0, "Ptr", Rows * LV_ItemHeight)
+}
+
+
 ; Функция проверки положения мыши
 IsMouseOverChat() {
     MouseGetPos(,, &WindowHwnd, )
-    return (WindowHwnd == SysChat.Hwnd)
+    return (WindowHwnd == wSysChat.Hwnd)
 }
 
 ; Блокировка выделения строк
@@ -348,6 +347,7 @@ PreventAllClicks(wParam, lParam, msg, hwnd) {
         return 0
     }
 }
+
 
 ;------------------------------------------------------------------------------------------------------
 ; Регистрируем обработчик для сообщения WM_COPYDATA (0x004A)
@@ -406,7 +406,7 @@ ProcessQueue() {
         if (StrLen(Str) <= MAX_MSG_LENGTH) {
             LV.Add(, Str, Color)
             CurrentRow := LV.GetCount()
-            LV_ColorManager.UpdateProps() ; вызываем UpdateProps() после добавления, но перед перекраской, чтобы принудительно синхронизировать с реальным состоянием ListView в памяти Windows
+            LV_ColorManager.UpdateProps()   ; вызываем UpdateProps() после добавления, но перед перекраской, чтобы принудительно синхронизировать с реальным состоянием ListView в памяти Windows
             LV_ColorManager.Row(CurrentRow, "", Color)
         }
         else {
@@ -420,7 +420,7 @@ ProcessQueue() {
     LV.Opt("+Redraw")
     ;LV.Redraw()
 
-    if (!IsUserScrolling) {
+    if (!IsUserScrolling) {     ; автоматическая прокрутка чата с получением нового события только в том случае, если чат в самом низу
         LV.Modify(CurrentRow, "Vis")
     }
 }
@@ -432,7 +432,7 @@ AddLongMsg(text, color, maxChars) {
     pos := 1
     linesArray := []
 
-    ; Ищем максимально возможный кусок, такой чтобы заканчивался на границе слова или пробеле (первая группа регулярки (.{1," maxChars "})(?:\s+|$)). Если не получилось - то просто откусим maxChar символов (вторая группа(.{1," maxChars "}))
+    ; Ищем максимально длинный кусок, такой чтобы заканчивался на границе слова или пробеле (первая группа регулярки (.{1," maxChars "})(?:\s+|$)). Если не получилось - то просто откусим maxChar символов (вторая группа(.{1," maxChars "}))
     while (pos := RegExMatch(text, "s)(.{1," maxChars "})(?:\s+|$)|(.{1," maxChars "})", &match, pos)) {
 
         chunk := match[1] !== "" ? match[1] : match[2]
@@ -456,6 +456,9 @@ AddLongMsg(text, color, maxChars) {
     }
 }
 
+
+LV_STR_MAX := 2500 ; по достижении этого количества строк частично очищаем таблицу от старых событий
+LV_STR_TO_SAVE := 1500 ; количество сохраняемых строк
 
 ; Производительности для отображаем только часть сообщений, остальные удаляем. Используем временный массив для сохранения данных и заполнение таблицы с нуля, так как удаление из стандартного ListView возможно только построчно, а каждое удаление из начала таблицы вызывало бы перестроение всей таблицы и необходимость синхронизации цветов, так как Classic_LV_Colors автоматически этого не делает.
 OptimizeListView(LV, CLV) {
@@ -505,6 +508,7 @@ OptimizeListView(LV, CLV) {
     LV.Opt("+Redraw")
 }
 
+
 ;------------------------------------------------------------------------------------------------------
 ; Если не используется SetParent (пока что сейчас всегда так), выгружаемся сами при получении сообщения о завершении процесса
 
@@ -523,8 +527,6 @@ OnWindowDestroy(hWinEventHook, event, hwnd, idObject, idChild, dwEventThread, dw
         ExitApp
     }
 }
-
-
 
 
 
