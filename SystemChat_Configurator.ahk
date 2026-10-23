@@ -57,12 +57,11 @@ HelpText := {
         ( LTrim
         For full functionality the script must be placed into folder \Lineage2\Patches\
 
-        Click the "Load" button to load text of game’s system messages.
+        Click the "Load" button to load game system messages.
 
-        To select several lines at once hold Ctrl or Shift. Choose the lines and select reuired color.
+        To select several lines at once hold Ctrl or Shift. Choose the lines and select required colors.
 
-        If you need to exclude a message from being displayed, select the required line and press "del".
-        If no color is specified for a message, that message will not be displayed at all.
+        If no color is specified for a message, that message will not be displayed in chat.
 
         You can customize your own color palette using the cells from the second row.
 
@@ -76,6 +75,10 @@ HelpText := {
 global DebugMode := false
 global NoIntegr := true
 global ChatPosManual := false
+
+global BlackBkgrnd := false
+global UseShadows := false
+
 
 global isListLoaded := false
 global isChanged := false
@@ -119,7 +122,7 @@ btnLoad.OnEvent("Click", (*) => ReloadSystemMsgE())
 
 
 
-;MyGui2.Add("GroupBox", "x+15 yp-12 w175 h65", "")
+
 
 ; Блок Шрифты
 ddlFontOpts := []
@@ -134,9 +137,20 @@ ddlFont.Text := "Segoe UI"
 ddlFontSize := MyGui2.Add("DropDownList", "x+3 yp w50", ["8" , "9" , "10", "11", "12", "13", "14"])
 ddlFontSize.Text := 10
 
+ddlFont.GetPos(&bX, &bY)
+tShadows := MyGui2.Add("Text", "x" bX+2 " y" bY+30 " +Disabled", "Shadows:")
+fcbxShadows := MyGui2.Add("Text", "x+3 yp w16 h16 Border Center 0x200 +Disabled", "✓")
+gbxFonts := MyGui2.Add("GroupBox", "x" bX-4 " y" bY-20 " w161 h72", "Fonts")
+
+fcbxShadows.OnEvent("Click", ToggleBox)
+ToggleBox(CtrlObj, *) {
+    CtrlObj.Text := (CtrlObj.Text = "") ? "✓" : ""
+    EnableSaveConfig()
+}
 
 ; Блок Окно
-tChatSize := MyGui2.Add("Text", "x+15 yp+4", "Chat Size:")
+ddlFontSize.GetPos(&bX, &bY)
+tChatSize := MyGui2.Add("Text", "x" bX+50+20 " y" bY+4 " +Disabled", "Chat Size:")
 ddlWSize := MyGui2.Add("DropDownList", "x+3 yp-4 w60", ["30%"])
 ddlWSize.Text := "30%"
 
@@ -152,6 +166,8 @@ eChatPosX := MyGui2.Add("Edit", "x+3 yp-2 w40 h20 +Number Limit4 +Disabled", "")
 tChatPosY := MyGui2.Add("Text", "x+10 yp+2 +Disabled", "Y:")
 eChatPosY := MyGui2.Add("Edit", "x+3 yp-2 w41 h20 +Number Limit4 +Disabled", "")
 
+tChatSize.GetPos(&bX, &bY)
+gbxWin := MyGui2.Add("GroupBox", "x" bX-5 " y" bY-24 " w129 h72", "Window")
 
 
 ; Инструкция и Опции
@@ -160,7 +176,8 @@ MyGui2.SetFont("s10 underline", "Segoe UI")
 Tut2 := MyGui2.Add("Text", "cBlue x750 y" bY+5 " w50", "Tutorial")
 Tut2.OnEvent("Click", (*) => MsgBox(HelpText.Tutorial, "Help"))
 MyGui2.Add("Text", "cBlue x+1", "(EN)").OnEvent("Click", (*) => MsgBox(HelpText.EN, "Help"))
-Opts := MyGui2.Add("Text", "x+20 yp cBlue", "Options")
+
+Opts := MyGui2.Add("Text", "x+20 yp cBlue +Disabled", "Options")
 Opts.OnEvent("Click", (*) => ShowOptions(MyGui2))
 MyGui2.SetFont("norm s10", "Segoe UI")
 
@@ -217,8 +234,9 @@ MyGui2.SetFont("s10 w400", "Segoe UI")
 
 ; Кнопка Очистить Цвет
 MainBtn[1].GetPos(&bX, &bY)
-XBtn    := MyGui2.Add("Text", "x+5 w35 h20 Center Border Background", "del")
+   XBtn := MyGui2.Add("Text", "x+5 w35 h20 Center Border Background +Disabled", "del")
 ;XBtn.SetFont("cB09979 s12 Bold")
+
 
 
 ; Вызов функций "клавиш" и сброса цветов
@@ -232,13 +250,13 @@ XBtn.OnEvent("Click",  (*) => ClearColor())
 
 ; Создание таблицы сообщений
 lv := MyGui2.AddListView("x10 yp+30 w1000 h675 NoSortHdr -E0x200 +LV0x14000 Background" DefaultBackColor " c" DefaultTextColor, ["RGB", "ID", "Msg"])
-lv.ModifyCol(1, "105 Integer")
+lv.ModifyCol(1, "98 Integer")
 lv.ModifyCol(2, "50 Integer")
 
 CLV := LV_Colors(lv)
 ;DisableFontAntialiasing(lv.Hwnd)
 
-
+gbxCol := MyGui2.Add("GroupBox", "x" bX-5 " y" bY-23 " w325 h72", "Colors")
 
 MyGui2.Show()
 
@@ -287,14 +305,18 @@ ShowOptions(ParentGui) {
     ParentGui.Opt("+Disabled")
 
     ; Считываем значения
-    optDM := optGui.Add("Checkbox", "x20 y20 h20", "Debug Mode")
+    global optDM := optGui.Add("Checkbox", "x20 y20 h20", "Debug Mode")
     optDM.Value := DebugMode
 
-    optManualPos := optGui.Add("Checkbox", "x20 yp+24 h20", "Manual Chat Position")
+    global optManualPos := optGui.Add("Checkbox", "x20 yp+24 h20", "Manual Chat Position")
     optManualPos.Value := ChatPosManual
     optManualPos.oldValue := ChatPosManual
 
-    optNoIntegr := optGui.Add("Checkbox", "x20 yp+24 h20 +Disabled", "Disable integration to L2")
+    global optBlackBkgrnd := optGui.Add("Checkbox", "x20 yp+24 h20", "Black Background")
+    optBlackBkgrnd.Value := BlackBkgrnd
+    optBlackBkgrnd.oldValue := BlackBkgrnd
+
+    global optNoIntegr := optGui.Add("Checkbox", "x20 yp+24 h20 +Disabled", "Disable integration to L2")
     optNoIntegr.Value := NoIntegr
 
     btnOk := optGui.Add("Button", "Default w60", "OK")
@@ -303,6 +325,7 @@ ShowOptions(ParentGui) {
 
     CloseModal(*) {
         global DebugMode := optDM.Value
+
         global ChatPosManual := optManualPos.Value
             if optManualPos.Value {
                 eChatPosX.Opt("-Disabled")
@@ -319,8 +342,24 @@ ShowOptions(ParentGui) {
             if (optManualPos.Value != optManualPos.oldValue) {
                 EnableSaveConfig()
             }
+
+        global BlackBkgrnd := optBlackBkgrnd.Value
+        if (optBlackBkgrnd.Value != optBlackBkgrnd.oldValue) {
+            if (optBlackBkgrnd.Value) {
+                fcbxShadows.Text := ""
+                fcbxShadows.Opt("+Disabled")
+                tShadows.Opt("+Disabled")
+            }
+            else {
+                fcbxShadows.Opt("-Disabled")
+                tShadows.Opt("-Disabled")
+            }
+            EnableSaveConfig()
+        }
+
         global NoIntegr := optNoIntegr.Value
-        (DebugMode || ChatPosManual) ? Opts.Opt("cMaroon") : Opts.Opt("cBlue")
+
+        (DebugMode || ChatPosManual || BlackBkgrnd) ? Opts.Opt("cMaroon") : Opts.Opt("cBlue")
         ParentGui.Opt("-Disabled")
         optGui.Destroy()
     }
@@ -431,6 +470,11 @@ ReloadSystemMsgE() {
         ddlWSize.Opt("-Disabled")
         ddlFont.Opt("-Disabled")
         ddlFontSize.Opt("-Disabled")
+        tChatSize.Opt("-Disabled")
+        tShadows.Opt("-Disabled")
+        fcbxShadows.Opt("-Disabled")
+        XBtn.Opt("-Disabled")
+        Opts.Opt("-Disabled")
     }
 
     for obj in mColors {
@@ -540,6 +584,8 @@ LoadColorConfig(filepath) {
             ddlWSize.Text := chSize
             ddlWSize.oldText := ddlWSize.Text
         }
+        (IniRead(filepath, "AdditionalChat", "UseShadows", "false") = "true") ? fcbxShadows.Text := "✓" : fcbxShadows.Text := ""
+
     } catch Error {
         OutputDebug("Failed to load ChatConfig.ini or section [AdditionalChat] is missing`n")
     }
@@ -779,13 +825,11 @@ SaveConfig(*) {
         ChatPosX := 0
     }
 
-    if ChatPosManual {
-        strChatSizeAndPos := "ChatPosManual=true`n"
-    }
-    else {
-        strChatSizeAndPos := "ChatPosManual=false`n"
-    }
-    strChatSizeAndPos .= "ChatSize=" ddlWSize.Text "`nChatPosX=" ChatPosX "`nChatPosY=" ChatPosY "`nChatHeight=" ChatHeight "`nChatRows=" ChatRows "`nFont=" ddlFont.Text "`nFontSize=" ddlFontSize.Text "`nFontPath=" fontsMap[ddlFont.Text]
+    (ChatPosManual) ? strChatSizeAndPos := "ChatPosManual=true" : strChatSizeAndPos := "ChatPosManual=false"
+
+    strChatSizeAndPos .= "`nChatSize=" ddlWSize.Text "`nChatPosX=" ChatPosX "`nChatPosY=" ChatPosY "`nChatHeight=" ChatHeight "`nChatRows=" ChatRows "`nFont=" ddlFont.Text "`nFontSize=" ddlFontSize.Text "`nFontPath=" fontsMap[ddlFont.Text]
+    (fcbxShadows.Text = "✓") ? strChatSizeAndPos .= "`nUseShadows=true" :  strChatSizeAndPos .= "`nUseShadows=false"
+    (BlackBkgrnd) ? strChatSizeAndPos .= "`nBlackBkgrnd=true" : strChatSizeAndPos .= "`nBlackBkgrnd=false"
 
     strCellsColors := ""
     for obj in mColors {
@@ -825,12 +869,15 @@ SaveConfig(*) {
         return false
     }
 
+
+
     if (!ExportTextures() || !DrawChatBackPNG(CustomSystemChatBkgrnd, ChatHeight, mTextureNames[2].Path, mTextureNames[3].Path, mTextureNames[4].Path)) {
         MsgBox("Ошибка сохранения файла фона.`nБудет использован стандартный фон", "Ошибка", "IconX Owner" MyGui2.Hwnd)
-        gdipCreatePng(CustomSystemChatBkgrnd, 345, ChatHeight, DefaultBackColor, 90)
+        gdipCreatePng(CustomSystemChatBkgrnd, 345, ChatHeight, DefaultBackColor, 255)
+        IniWrite("true", filepath, "AdditionalChat", "BlackBkgrnd")
+        IniWrite("false", filepath, "AdditionalChat", "UseShadows")
     }
 
-    gdipCreatePng(CustomSystemChatBkgrnd, 345, ChatHeight, DefaultBackColor, 90) ; Пока не реализована работа с полупрозрачными таблицей и фоном в оверлее принудительно используем простую графику
 
     isChanged := false
     OnceChanged := false
@@ -850,6 +897,10 @@ GetContrastColor(color) {
 
     ; Если яркость меньше половины (128), значит, фоновый цвет темный -> вернем белый
     return (Y < 128) ? "0xFFFFFF" : "0x000000"
+
+;R = Y + 0.9563 * I + 0.6210 * Q)
+;G = Y - 0.2721 * I - 0.6474 * Q)
+;B = Y - 1.1070 * I + 1.7046 * Q)
 }
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1040,27 +1091,43 @@ DrawChatBackPNG(targetPath, targetHeight, HeadPath, BodyPath, BottomPath) {
     pBitmapDst := Gdip_CreateBitmap(345, targetHeight)
     pGraphics := Gdip_GraphicsFromImage(pBitmapDst)
 
-    ; Контур (рисуем полый прямоугольник)
+
+    ; Фон чата (залитый прямоугольник)
+    pixelColor := Gdip_GetPixel(pBitmapSrcHead, 24, 3)
+    ;PixelColor := (pixelColor & 0x00FFFFFF) | (0xFF << 24) ; выставляем значение alpha канала = 255
+    pBrush := Gdip_BrushCreateSolid(pixelColor)
+    Gdip_FillRectangle(pGraphics, pBrush, 1, 1, 343, targetHeight - 2)
+
+    ; Черный контур (полый прямоугольник)
     pPen := Gdip_CreatePen(0xFF000000, 2)
     Gdip_DrawRectangle(pGraphics, pPen, 1, 1, 343, targetHeight - 2) ; так как толщина кисти 2px, то делаем отступ 1px от левого верхнего и правого нижнего угла
-
     Gdip_DeletePen(pPen)
 
-
     ; Копируем шапку окна из файла текстуры игры
-    Gdip_DrawImage(pGraphics, pBitmapSrcHead, 0, 0, 25, 10, 0, 0, 25, 10) ; 23px ширина плашки со скролл-баром в игре + 2px тень; 10px высота оригинальной текстуры игры
+    DllCall("gdiplus\GdipSetCompositingMode", "Ptr", pGraphics, "Int", 0) ; 1 - замена , 0 - смешивание цветов
+    Gdip_DrawImage(pGraphics, pBitmapSrcHead, 0, 0, 23, 10, 0, 0, 23, 10) ; 22px ширина плашки со скролл-баром в игре +1px контур; 10px высота оригинальной текстуры игры;
+
+
+    ; Редактируем шапку (для сглаживания цветов)
+    DllCall("gdiplus\GdipSetCompositingMode", "Ptr", pGraphics, "Int", 1)
+    Loop 16 {
+        x := A_Index
+
+        pixelColor := Gdip_GetPixel(pBitmapDst, x, 7)
+        DllCall("gdiplus\GdipSetSolidFillColor", "Ptr", pBrush, "UInt", pixelColor)
+        Gdip_FillRectangle(pGraphics, pBrush, x, 8, 1, 2) ; рисуем вертикальную линию (прямоугольник) шириной 1px
+    }
 
     ; Клонируем тело окна (вертикально построчно, ориентируясь на цвет пикселя оригинальной текстуры игры)
-    Loop 25 {
-        x := A_Index - 1
+    Loop 22 {
+        x := A_Index
 
-        pixelColor := Gdip_GetPixel(pBitmapSrcBody, x, 0)
-        PixelColor := (pixelColor & 0x00FFFFFF) | (90 << 24) ; выставляем значение alpha канала = 90
-
-        pBrush := Gdip_BrushCreateSolid(PixelColor)
-        Gdip_FillRectangle(pGraphics, pBrush, x, 10, 1, targetHeight - (10 + 1)) ; рисуем вертикальную линию (прямоугольник) шириной 1px от шапки до границы (высоты) холста
-        Gdip_DeleteBrush(pBrush)
+        pixelColor := Gdip_GetPixel(pBitmapDst, x, 9)
+        DllCall("gdiplus\GdipSetSolidFillColor", "Ptr", pBrush, "UInt", pixelColor)
+        Gdip_FillRectangle(pGraphics, pBrush, x, 10, 1, targetHeight - (10 + 2)) ; рисуем вертикальную линию (прямоугольник) шириной 1px от шапки до границы (высоты) холста
     }
+
+    Gdip_DeleteBrush(pBrush)
 
     ; Сохраняем результат
     saveResult := Gdip_SaveBitmapToFile(pBitmapDst, targetPath)
