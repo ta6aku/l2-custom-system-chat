@@ -84,7 +84,7 @@ global isListLoaded := false
 global isChanged := false
 global OnceChanged := false
 
-
+global ColorsConfMap := Map()
 configPath := A_ScriptDir "\ChatConfig.ini"
 
 DefaultTextColor := "0xB09979"
@@ -116,12 +116,10 @@ TraySetIcon("shell32.dll","329")
 ;MyGui2.OnEvent("Close", (*) => ExitApp())
 MyGui2.OnEvent("Close", ConfirmAndExit)
 
+
 ; Кнопка Загрузить
-btnLoad := MyGui2.Add("Button", "x10 y15 w80 h29", "Load")
+btnLoad := MyGui2.Add("Button", "x10 y20 w80 h29", "Load")
 btnLoad.OnEvent("Click", (*) => ReloadSystemMsgE())
-
-
-
 
 
 ; Блок Шрифты
@@ -140,7 +138,7 @@ ddlFontSize.Text := 10
 ddlFont.GetPos(&bX, &bY)
 tShadows := MyGui2.Add("Text", "x" bX+2 " y" bY+30 " +Disabled", "Shadows:")
 fcbxShadows := MyGui2.Add("Text", "x+3 yp w16 h16 Border Center 0x200 +Disabled", "✓")
-gbxFonts := MyGui2.Add("GroupBox", "x" bX-4 " y" bY-20 " w161 h72", "Fonts")
+gbxFonts := MyGui2.Add("GroupBox", "x" bX-4 " y" bY-20 " w161 h74", "Fonts")
 
 fcbxShadows.OnEvent("Click", ToggleBox)
 ToggleBox(CtrlObj, *) {
@@ -148,9 +146,10 @@ ToggleBox(CtrlObj, *) {
     EnableSaveConfig()
 }
 
+
 ; Блок Окно
-ddlFontSize.GetPos(&bX, &bY)
-tChatSize := MyGui2.Add("Text", "x" bX+50+20 " y" bY+4 " +Disabled", "Chat Size:")
+ddlFont.GetPos(&bX, &bY)
+tChatSize := MyGui2.Add("Text", "x" bX+172 " y" bY+4 " +Disabled", "Chat Size:")
 ddlWSize := MyGui2.Add("DropDownList", "x+3 yp-4 w60", ["30%"])
 ddlWSize.Text := "30%"
 
@@ -167,7 +166,7 @@ tChatPosY := MyGui2.Add("Text", "x+10 yp+2 +Disabled", "Y:")
 eChatPosY := MyGui2.Add("Edit", "x+3 yp-2 w41 h20 +Number Limit4 +Disabled", "")
 
 tChatSize.GetPos(&bX, &bY)
-gbxWin := MyGui2.Add("GroupBox", "x" bX-5 " y" bY-24 " w129 h72", "Window")
+gbxWin := MyGui2.Add("GroupBox", "x" bX-5 " y" bY-24 " w129 h74", "Window")
 
 
 ; Инструкция и Опции
@@ -192,7 +191,7 @@ btnSave.OnEvent("Click", (*) => SaveConfig())
 ; "Клавиши" с предопределенными цветами
 btnLoad.GetPos(&bX, &bY)
 MainBtn := [] ; будем использовать контрол типа "Text", вместо "Button", удобнее для работы с цветом фона, но именовать будем все равно Btn
-    MainBtn.Push(MyGui2.Add("Text", "x" bX+410 " y20 w30 h20 Border Background" mColors[1].Hex))
+    MainBtn.Push(MyGui2.Add("Text", "x" bX+410 " y" bY+4 " w30 h20 Border Background" mColors[1].Hex))
     for obj in mColors {
         if (obj.ID > 1) {
             MainBtn.Push(MyGui2.Add("Text", "x+5 w30 h20 Border Background" obj.Hex))
@@ -235,9 +234,9 @@ MyGui2.SetFont("s10 w400", "Segoe UI")
 ; Кнопка Очистить Цвет
 MainBtn[1].GetPos(&bX, &bY)
    XBtn := MyGui2.Add("Text", "x+5 w35 h20 Center Border Background +Disabled", "del")
-;XBtn.SetFont("cB09979 s12 Bold")
 
 
+gbxCol := MyGui2.Add("GroupBox", "x" bX-5 " y" bY-22 " w325 h74", "Colors")
 
 ; Вызов функций "клавиш" и сброса цветов
 for obj in mColors {
@@ -248,19 +247,16 @@ for obj in mColors {
 XBtn.OnEvent("Click",  (*) => ClearColor())
 
 
+btnLoad.GetPos(&bX, &bY)
 ; Создание таблицы сообщений
-lv := MyGui2.AddListView("x10 yp+30 w1000 h675 NoSortHdr -E0x200 +LV0x14000 Background" DefaultBackColor " c" DefaultTextColor, ["RGB", "ID", "Msg"])
+lv := MyGui2.AddListView("x" bX " y" bY+65 " w1000 h675 NoSortHdr -E0x200 +LV0x14000 Background" DefaultBackColor " c" DefaultTextColor, ["RGB", "ID", "Msg"])
 lv.ModifyCol(1, "98 Integer")
 lv.ModifyCol(2, "50 Integer")
-
 CLV := LV_Colors(lv)
 ;DisableFontAntialiasing(lv.Hwnd)
 
-gbxCol := MyGui2.Add("GroupBox", "x" bX-5 " y" bY-23 " w325 h72", "Colors")
 
 MyGui2.Show()
-
-global ColorsConfMap := Map()
 
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -297,34 +293,46 @@ SetFonts(*) {
 }
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
-
 ; Окно Дополнительных параметров
-ShowOptions(ParentGui) {
+global optGui := Gui("+Owner" MyGui2.Hwnd " +ToolWindow -SysMenu", "Adv. Settings:")
 
-    optGui := Gui("+Owner" ParentGui.Hwnd " +ToolWindow -SysMenu", "Adv. Settings:")
+global optDM := optGui.Add("Checkbox", "x20 y20 h20", "Debug Mode")
+global optManualPos := optGui.Add("Checkbox", "x20 yp+24 h20", "Manual Chat Position")
+global optBlackBkgrnd := optGui.Add("Checkbox", "x20 yp+24 h20", "Black Background")
+global optNoIntegr := optGui.Add("Checkbox", "x20 yp+24 h20 +Disabled", "Disable integration to L2")
+
+btnOk := optGui.Add("Button", "Default w60", "OK")
+
+
+ShowOptions(ParentGui) {
+    global optGui
+
     ParentGui.Opt("+Disabled")
 
-    ; Считываем значения
-    global optDM := optGui.Add("Checkbox", "x20 y20 h20", "Debug Mode")
     optDM.Value := DebugMode
+    optDM.oldValue := optDM.Value
 
-    global optManualPos := optGui.Add("Checkbox", "x20 yp+24 h20", "Manual Chat Position")
     optManualPos.Value := ChatPosManual
     optManualPos.oldValue := ChatPosManual
 
-    global optBlackBkgrnd := optGui.Add("Checkbox", "x20 yp+24 h20", "Black Background")
     optBlackBkgrnd.Value := BlackBkgrnd
     optBlackBkgrnd.oldValue := BlackBkgrnd
 
-    global optNoIntegr := optGui.Add("Checkbox", "x20 yp+24 h20 +Disabled", "Disable integration to L2")
     optNoIntegr.Value := NoIntegr
 
-    btnOk := optGui.Add("Button", "Default w60", "OK")
 
     ParentGui.GetPos(&px, &py, &pw, &ph)
+    cx := px + 850
+    cy := py + 75
+    optGui.Show("x" cx " y" cy)
+
+    btnOk.OnEvent("Click", CloseModal)
 
     CloseModal(*) {
         global DebugMode := optDM.Value
+        if (optDM.Value != optDM.oldValue) {
+            EnableSaveConfig()
+        }
 
         global ChatPosManual := optManualPos.Value
             if optManualPos.Value {
@@ -361,17 +369,8 @@ ShowOptions(ParentGui) {
 
         (DebugMode || ChatPosManual || BlackBkgrnd) ? Opts.Opt("cMaroon") : Opts.Opt("cBlue")
         ParentGui.Opt("-Disabled")
-        optGui.Destroy()
+        optGui.Show("Hide")
     }
-
-    btnOk.OnEvent("Click", CloseModal)
-    optGui.OnEvent("Close", CloseModal)
-
-    optGui.Show("Hide")
-    ParentGui.GetPos(&px, &py, &pw, &ph)
-    cx := px + 850
-    cy := py + 75
-    optGui.Show("x" cx " y" cy)
 }
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -448,16 +447,14 @@ eChatPosY.OnEvent("Change",(ctrl, *) => (ctrl.Value != ctrl.oldValue) ? (ctrl.ol
 ; Подгрузка данных из systemmsg-e.txt по кнопке LOAD
 
 ReloadSystemMsgE() {
-    global configPath, isChanged, OnceChanged
+    global isChanged, OnceChanged, DebugMode, ChatPosManual, BlackBkgrnd
 
     if (btnLoad.Text = "Reload") && (isChanged = true) {
         result := MsgBox("Are you sure to reload?", "ChatConfig.ini", "0x24 Owner" MyGui2.Hwnd) ; 0x20 Icon?, 0x4 Y/N
         if (result = "No") {
             return
         }
-    }
-
-    if (!DecodeMsgFile() || !ReadDecodedFile()) {
+    } else if (!DecodeMsgFile() || !ReadDecodedFile()) {
         return
     }
 
@@ -465,23 +462,34 @@ ReloadSystemMsgE() {
         return
     }
 
-    if (btnLoad.Text = "Load") {
-        btnLoad.Text := "Reload"
-        ddlWSize.Opt("-Disabled")
-        ddlFont.Opt("-Disabled")
-        ddlFontSize.Opt("-Disabled")
-        tChatSize.Opt("-Disabled")
-        tShadows.Opt("-Disabled")
-        fcbxShadows.Opt("-Disabled")
-        XBtn.Opt("-Disabled")
-        Opts.Opt("-Disabled")
-    }
+    DebugMode := false
+    optDM.Value := false
+    ddlWSize.Opt("-Disabled")
+    ddlFont.Opt("-Disabled")
+    ddlFontSize.Opt("-Disabled")
+    tChatSize.Opt("-Disabled")
+    tShadows.Opt("-Disabled")
+    fcbxShadows.Opt("-Disabled")
+    XBtn.Opt("-Disabled")
+    Opts.Opt("-Disabled")
+    BlackBkgrnd := false
+    ChatPosManual := false
+    optManualPos.Value := false
+    eChatPosX.Opt("+Disabled")
+    eChatPosY.Opt("+Disabled")
+    tChatPosX.Opt("+Disabled")
+    tChatPosY.Opt("+Disabled")
+    Opts.Opt("cBlue")
 
     for obj in mColors {
         CustomBtn[obj.ID].cCol := 0
         CustomBtn[obj.ID].Opt("Background0xFFFFFF")
         CustomBtnX[obj.ID].Opt("+Hidden")
         CustomBtn[obj.ID].Redraw()
+    }
+
+    if (btnLoad.Text = "Load") {
+        btnLoad.Text := "Reload"
     }
 
     result := MsgBox("Previously saved Config file found.`nDo you want to apply color-schema?", "ChatConfig.ini", "0x24 Owner" MyGui2.Hwnd) ; 0x20 Icon?, 0x4 Y/N
@@ -493,7 +501,6 @@ ReloadSystemMsgE() {
     isChanged := false
     OnceChanged := false
     btnSave.Opt("+Disabled")
-
 }
 
 
@@ -574,7 +581,7 @@ ReadDecodedFile() {
 
 ; Функция загрузки сохраненных параметров из конфиг файла
 LoadColorConfig(filepath) {
-    global ColorsConfMap, ChatPosManual
+    global ColorsConfMap, ChatPosManual, BlackBkgrnd
 
     ; Размер окна
     try {
@@ -590,7 +597,7 @@ LoadColorConfig(filepath) {
         OutputDebug("Failed to load ChatConfig.ini or section [AdditionalChat] is missing`n")
     }
 
-    ; Положение окна
+    ; Положение окна и фон
     try {
         chPos := (IniRead(ConfigPath, "AdditionalChat", "ChatPosManual", "false") = "true")
         if (chPos = true) {
@@ -600,12 +607,16 @@ LoadColorConfig(filepath) {
             eChatPosX.Opt("-Disabled")
             eChatPosY.Opt("-Disabled")
             Opts.Opt("cMaroon")
-
         }
 
-        if (Number(StrReplace(chSize, "%")) <= Number(StrReplace(allowedPercents[allowedPercents.Length], "%"))) {
-            ddlWSize.Text := chSize
-            ddlWSize.oldText := ddlWSize.Text
+        blackBak := (IniRead(ConfigPath, "AdditionalChat", "BlackBkgrnd", "false") = "true")
+        if (blackBak = true) {
+            BlackBkgrnd := true
+            fcbxShadows.Text := ""
+            fcbxShadows.Opt("+Disabled")
+            tShadows.Opt("+Disabled")
+            optBlackBkgrnd.Value := BlackBkgrnd
+            Opts.Opt("cMaroon")
         }
     } catch Error {
         OutputDebug("Failed to load ChatConfig.ini or section [AdditionalChat] is missing`n")
@@ -781,8 +792,10 @@ ConfigureBtnBackgroundColor(GuiCtrl) {
         GuiCtrl.Redraw()
     }
 }
-;------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+
+;------------------------------------------------------------------------------------------------------------------------------------------------------------
+; Сохранение конфиг-файла
 EnableSaveConfig(*) {
 global OnceChanged, isChanged
 
@@ -903,6 +916,7 @@ GetContrastColor(color) {
 ;B = Y - 1.1070 * I + 1.7046 * Q)
 }
 
+
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 DisableFontAntialiasing(hwnd) {
@@ -921,8 +935,8 @@ DisableFontAntialiasing(hwnd) {
     DllCall("SendMessage", "ptr", hwnd, "uint", 0x0030, "ptr", newFont, "ptr", 1) ; WM_SETFONT
 }
 
-;------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+;------------------------------------------------------------------------------------------------------------------------------------------------------------
 ; Вызов стандартной виндовой палитры
 WindowsColorPicker(defaultColor := 0xFFFFFF, hwndParent := 0) {
 
