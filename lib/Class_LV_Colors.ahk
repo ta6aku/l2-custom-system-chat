@@ -2,12 +2,14 @@
 ; ======================================================================================================================
 ; Namespace:      LV_Colors
 ; Function:       Individual row and cell coloring for AHK ListView controls.
-; Tested with:    AHK 2.0.26 (U32/U64)
-; Tested on:      Win 11 (x64)
-; Changelog:      2023-01-04/2.0.0/just me   Initial release of the AHK v2 version
+
 ; ======================================================================================================================
 ; ====================== THIS IS NOT ORIGINAL LIBRARY!! CHECK CHANGELIST BELOW: ========================================
-;                 2026-10-23/ta6aku     Alternate colors functionality has been deleted; Shadows added to text
+; Tested with:    AHK 2.0.26 (U32/U64)
+; Tested on:      Win 11 (x64)
+; Changelog:      2023-01-04/2.0.0/just_me  Initial release of the AHK v2 version
+;                 2026-10-26/ta6aku         Alternate colors functionality has been deleted;
+;                                           Shadows added to text (selection rows/cols should be disabled in this case)
 ; ======================================================================================================================
 ; CLASS LV_Colors
 ;
@@ -250,14 +252,27 @@ Class LV_Colors {
       Item := Row - 1
       If This.IsStatic
          Row := This.MapIndexToID(Row)
+
       ; CDDS_SUBITEMPREPAINT = 0x030001 --------------------------------------------------------------------------------
       If (DrawStage = 0x030001) {
+         ; Если строка выделена — мы сюда попадём, только если у таблицы включены кастомные цвета выделения SelColors.
+         ; Отдаем отрисовку Windows, предварительно записав цвета выделения.
+         If (This.IsCurrentRowSelected) {
+            If (This.SELB != "")
+               NumPut("UInt", This.SELB, L + OffCB)
+            If (This.SELT != "")
+               NumPut("UInt", This.SELT, L + OffCT)
+            Return 0x00 ; CDRF_DODEFAULT
+         }
+
+         ; ----- РУЧНАЯ ОТРИСОВКА ТЕНЕЙ И ТЕКСТА -----
          HDC := NumGet(L + OffHDC, "UPtr")
          RC := Buffer(16, 0)
          NumPut("Int", 2, RC, 0)        ; LVIR_LABEL
          NumPut("Int", Col - 1, RC, 4)  ; top = subitem index
          SendMessage(0x1038, Item, RC.Ptr, This.HWND)   ; LVM_GETSUBITEMRECT
          Text := This.LV.GetText(Item + 1, Col)
+
          ; DT_SINGLELINE 0x20 | DT_VCENTER 0x04 | DT_NOPREFIX 0x800 | DT_END_ELLIPSIS 0x8000
          Flags := 0x8000 | 0x020 | 0x004 | 0x0800
          DllCall("gdi32\SetBkMode", "Ptr", HDC, "Int", 1)   ; TRANSPARENT
@@ -266,64 +281,67 @@ Class LV_Colors {
          ColT := (ColColors["T"] != "") ? ColColors["T"] : This.RowT
 
          ;----- "Тени" от текста -----
-         if (This.LV.HasProp("Shadows") && This.LV.Shadows) {
-            ; Массив смещений для OffsetRect: [dX, dY]
-            ; 1. Вправо (+1, 0) | 2. Вниз (-1, +1) | 3. Вправо-вниз (+1, 0)
-            ShadowOffsets := [[1, 0], [-1, 1], [1, 0]]
+         ; Массив смещений для OffsetRect: [dX, dY]
+         ; 1. Вправо (+1, 0) | 2. Вниз (-1, +1) | 3. Вправо-вниз (+1, 0)
+         ShadowOffsets := [[1, 0], [-1, 1], [1, 0]]
 
-            ; Раcчет цвета тени
-            ;ShadowColor := This.BlendColors(ColT, 0.3)    ; Смешивание цветов фона и текста
-            ShadowColor := (ColT & 0xFCFCFC) >> 2          ; Простое затемнение в 2 раза
-            DllCall("gdi32\SetTextColor", "Ptr", HDC, "UInt", ShadowColor)
+         ; Раcчет цвета тени
+         ;ShadowColor := This.BlendColors(ColT, 0.3)    ; Смешивание цветов фона и текста
+         ShadowColor := (ColT & 0xFCFCFC) >> 2          ; Простое затемнение цвета текста в 2 раза
+         DllCall("gdi32\SetTextColor", "Ptr", HDC, "UInt", ShadowColor)
 
-            ; Рисуем тени по всем смещениям
-            For Offset In ShadowOffsets {
-               DllCall("user32\OffsetRect", "Ptr", RC.Ptr, "Int", Offset[1], "Int", Offset[2])
-               DllCall("user32\DrawTextW", "Ptr", HDC, "Str", Text, "Int", -1, "Ptr", RC.Ptr, "UInt", Flags)
-            }
-
-            ;----- Основной текст -----
-            ; Возвращаем прямоугольник RC в исходное состояние (сдвигаем обратно на -1, -1)
-            DllCall("user32\OffsetRect", "Ptr", RC.Ptr, "Int", -1, "Int", -1)
+         ; Рисуем тени по всем смещениям
+         For Offset In ShadowOffsets {
+            DllCall("user32\OffsetRect", "Ptr", RC.Ptr, "Int", Offset[1], "Int", Offset[2])
+            DllCall("user32\DrawTextW", "Ptr", HDC, "Str", Text, "Int", -1, "Ptr", RC.Ptr, "UInt", Flags)
          }
 
-         ; Рисуем текст главным цветом
+         ;----- Основной текст -----
+         ; Возвращаем прямоугольник RC в исходное состояние (сдвигаем обратно на -1, -1)
+         DllCall("user32\OffsetRect", "Ptr", RC.Ptr, "Int", -1, "Int", -1) ; Возвращаем координаты на место
+
+         ; Рисуем основной текст главным цветом
          DllCall("gdi32\SetTextColor", "Ptr", HDC, "UInt", ColT)
          DllCall("user32\DrawTextW", "Ptr", HDC, "Str", Text, "Int", -1, "Ptr", RC, "UInt", Flags)
 
-         ; CDRF_SKIPDEFAULT (0x04)
-         Return 0x04
+         Return 0x04 ; CDRF_SKIPDEFAULT
       }
 
       ; CDDS_ITEMPREPAINT = 0x010001 -----------------------------------------------------------------------------------
       If (DrawStage = 0x010001) {
          ; LVM_GETITEMSTATE = 0x102C, LVIS_SELECTED = 0x0002
-         If (This.SelColors) && SendMessage(0x102C, Item, 0x0002, This.HWND) {
-            ; Remove the CDIS_SELECTED (0x0001) and CDIS_FOCUS (0x0010) states from uItemState and set the colors.
-            NumPut("UInt", NumGet(L + OffItemState, "UInt") & ~0x0011, L + OffItemState)
-            If (This.SELB != "")
-               NumPut("UInt", This.SELB, L + OffCB)
-            If (This.SELT != "")
-               NumPut("UInt", This.SELT, L + OffCT)
-            This.CellT := (This.SELT != "") ? This.SELT : This.RowT
-            Return 0x02 ; CDRF_NEWFONT
+         This.IsCurrentRowSelected := This.SelColors && SendMessage(0x102C, Item, 0x0002, This.HWND)
+         HasShadows := This.LV.HasProp("Shadows") && This.LV.Shadows
+
+         ; Если строка выделена и таблице нужны тени — заставляем Windows зайти на этап ячеек (0x20),
+         ; чтобы там вернуть управление через CDRF_DODEFAULT и не сломать фокус.
+         ; Если теней нет — сразу отдаем управление Windows через 0x02 (CDRF_NEWFONT)
+         If (This.IsCurrentRowSelected) {
+            Return HasShadows ? 0x20 : 0x02
          }
+
+         ; Вычисляем и передаем цвета для отрисовки обычной (не выделенной) строки,
+         ; и если таблице не нужны тени, возвращаем дефолтное управление через 0x02 (CDRF_NEWFONT).
+         ; Если тени есть — возвращаем 0x30, чтобы провалиться в ручную отрисовку ячеек 0x030001.
          RowColors := This.Rows.Has(Row) ? This.Rows[Row] : "",
          This.RowB := RowColors ? RowColors["B"] : This.BkClr,
          This.RowT := RowColors ? RowColors["T"] : This.TxClr
-         This.CellT := This.RowT
-         If (This.Cells.Has(Row))
-             Return 0x30
+
          NumPut("UInt", This.RowT, L + OffCT), NumPut("UInt", This.RowB, L + OffCB)
-         Return 0x30
+
+         Return HasShadows ? 0x30 : 0x02
       }
+
       ; CDDS_PREPAINT = 0x000001 ---------------------------------------------------------------------------------------
       Return (DrawStage = 0x000001) ? 0x20 : 0x00
    }
+
+
    ; -------------------------------------------------------------------------------------------------------------------
    MapIndexToID(Row) { ; provides the unique internal ID of the given row number
       Return SendMessage(0x10B4, Row - 1, 0, This.HWND) ; LVM_MAPINDEXTOID
    }
+
    ; -------------------------------------------------------------------------------------------------------------------
    BGR(Color, Default := "") { ; converts colors to BGR
       ; HTML Colors (BGR)
@@ -334,6 +352,7 @@ Class LV_Colors {
          Return ((Color >> 16) & 0xFF) | (Color & 0x00FF00) | ((Color & 0xFF) << 16)
       Return (HTML.HasOwnProp(Color) ? HTML.%Color% : Default)
    }
+
    ; -------------------------------------------------------------------------------------------------------------------
    BlendColors(Color1, Color2, Alpha := 0.3) { ; alpha blending: цвет_тени = [цвет_текста * a] + [цвет_фона * (1-α)]
       ; Разбираем BGR компоненты
