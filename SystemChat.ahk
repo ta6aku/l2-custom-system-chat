@@ -126,7 +126,7 @@ ChatBkgrnd := ImageShow(A_ScriptDir "\resources\CustomSystemChatBkgrnd.png",, [0
 ; 2. Отдельное окно для таблицы (чтобы не пытаться управлять прозрачностью слоев в рамках одного gui. Это окно будем отрисовывать поверх фоновой картинки)
 global wSysChat := Gui("-SysMenu -Caption -Border -DPIScale +E0x80000") ; +E0x80000 = WS_EX_LAYERED
 wSysChat.Title := "L2_SystemChat" ; это имя прописано в .dll
-;wSysChat.SetFont("s10 q3", "Segoe UI")
+
 wSysChat.BackColor := "" BkColor
 WinSetTransColor("ABCDEF", wSysChat)
 
@@ -135,7 +135,6 @@ WinSetTransColor("ABCDEF", wSysChat)
 ; 3. Отдельное прозрачное окно для перехвата кликов по области
 global wCtrls := Gui("-SysMenu -Caption -Border -DPIScale")
 wCtrls.Title := "L2_SystemChat_CtrlsZone"
-
 
 
 
@@ -164,14 +163,40 @@ else {
 }
 
 
+VScrollW := SysGet(2) ; SM_CXVSCROLL = 2 ; Размер скроллбара с учетом масштабирования
+
+if (DEBUG_MODE) {
+    WindowDPI := DllCall("User32\GetDpiForWindow", "Ptr", wSysChat.Hwnd, "UInt")
+    WindowScale := Round((WindowDPI / 96) * 100)
+    LogDebug(Format("`nScale settings are: " WindowScale "%" "`nScroll width is: " VScrollW))
+}
+
+
 ; Создаем ListView более широкий, чем сумма ширин столбцов, чтобы скроллбар ушел за видимый край
 ; Второй столбец делаем нулевого размера (скрытым)
-global LV := wSysChat.AddListView("x0 y0 w" (VisibleW + 45) " h" (VisibleH) " -Hdr -Multi -E0x200 +LV0x14000 Background" BkColor " c" DefaultTextColor, ["Msg", "Color"]) ; LVS_EX_DOUBLEBUFFER = 0x00010000 ,  LVS_EX_JUSTIFYCOLUMNS = 0x00004000 ,  WS_EX_CLIENTEDGE = E0x200
-LV.ModifyCol(1, VisibleW + 25)
+global LV := wSysChat.AddListView("x0 y0 w" (VisibleW + 2*VScrollW + 1) " h" (VisibleH) " -Hdr -Multi -E0x200 +LV0x14000 Background" BkColor " c" DefaultTextColor, ["Msg", "Color"]) ; LVS_EX_DOUBLEBUFFER = 0x00010000 ,  LVS_EX_JUSTIFYCOLUMNS = 0x00004000 ,  WS_EX_CLIENTEDGE = E0x200
+LV.ModifyCol(1, VisibleW)
 LV.ModifyCol(2, 0)
 
 LV.DefineProp("Shadows", {Value: (IniRead(configPath, "AdditionalChat", "UseShadows", "true") = "true")})
-DisableFontAntialiasing(LV.Hwnd)
+
+
+Font := IniRead(configPath, "AdditionalChat", "Font", "MS Shell Dlg")
+FontSize := IniRead(configPath, "AdditionalChat", "FontSize", "8")
+FontPath := IniRead(configPath, "AdditionalChat", "FontPath", "NULL")
+FontAA := Number(IniRead(configPath, "AdditionalChat", "FontAA", "3"))
+MAX_MSG_LENGTH := Number(IniRead(configPath, "AdditionalChat", "StrLength", "59"))
+
+if (FontPath != "NULL") {
+    FullFontPath := A_ScriptDir . FontPath
+    if !(SetFont(Font, FullFontPath, FontSize, 400, LV.Hwnd, FontAA)) {     ; если ошибка при регистрации шрифта, то используем дефолтный
+        LV.SetFont("s8", "MS Shell Dlg")
+        MAX_MSG_LENGTH := 59
+    }
+}
+else {
+    LV.SetFont("s" FontSize " q" FontAA, Font)
+}
 
 global LV_ColorManager := LV_Colors(LV)
 
@@ -181,23 +206,131 @@ if (DEBUG_MODE) {
     ; Заполнение для теста
     LV.Add(, "", "")
     LV.Add(, "Проверка шрифта на читаемость", "")
-    LV.Add(, "Шрифт: Segue,  10", "")
-    LV.Add(, "......................................", "")
-    LV.Add(, "0O08B389 1lI1l1Ii b6b ч4чб6б  З3З", "")
+
+
+    ; 1. Определяем используемый шрифт
+    hFont := SendMessage(0x0031, 0, 0, LV) ; 0x0031 = WM_GETFONT
+    if (hFont == 0) {   ; если используется стандартный системный шрифт
+        hFont := DllCall("gdi32.dll\GetStockObject", "Int", 17, "Ptr") ; 17 = DEFAULT_GUI_FONT
+    }
+
+    ; 2. Вытягиваем структуру LOGFONT (92 байта)
+    LF := Buffer(92, 0)
+    DllCall("gdi32.dll\GetObject", "Ptr", hFont, "Int", LF.Size, "Ptr", LF)
+
+    ; 3. Имя записано в структуре с 28-го байта; для алиаса реальное имя системного шрифта будет записано в реестре
+    FontAName := StrGet(LF.Ptr + 28, 32, "UTF-16")
+    try {
+        FontRName := RegRead("HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontSubstitutes", FontAName)
+    } catch {
+        FontRName := FontAName
+    }
+
+    ; 4. Читаем высоту (lfHeight записана в первых 4 байтах как signed int)
+    lfHeight := NumGet(LF, 0, "Int")
+
+    ; 5. Получаем DPI экрана по вертикали для перевода пикселей в пункты (pt)
+    hDC := DllCall("user32.dll\GetDC", "Ptr", 0, "Ptr")
+    dpiY := DllCall("gdi32.dll\GetDeviceCaps", "Ptr", hDC, "Int", 90) ; 90 = LOGPIXELSY
+    DllCall("user32.dll\ReleaseDC", "Ptr", 0, "Ptr", hDC)
+
+    ; 6. Вычисляем размер в пунктах (шрифт обычно возвращает отрицательную высоту)
+    FontSize := Round(Abs(lfHeight) * 72 / dpiY)
+
+    ; 7. Вычисляем размер высоты строки
+    LineH := GetDefaultLineHeight(LV.hwnd)
+
+    ; 8. Вычисляем значение бита сглаживания
+    lfQuality := NumGet(LF, 26, "UChar")
+    qualityText := "Неизвестно (" lfQuality ")"
+    switch lfQuality {
+        case 0: qualityText := "По умолчанию (DEFAULT)"
+        case 1: qualityText := "Черновик (DRAFT)"
+        case 2: qualityText := "Высокое (PROOF)"
+        case 3: qualityText := "Без сглаживания (NONANTIALIASED)"
+        case 4: qualityText := "Обычное сглаживание (ANTIALIASED)"
+        case 5: qualityText := "Субпиксельное (ClearType)"
+    }
+
+    LV.Add(, "Шрифт: " FontRName ", " FontSize " pt", "")
+    LV.Add(, "Сглаживание: " lfQuality " - " qualityText, "")
+    LV.Add(, "Высота строки: " LineH " px", "")
+    LV.Add(, "...........................................................", "")
+    LV.Add(, "0O08B389368 1lI|jl1i ч4Ч б6б8 З3ЗЭэз", "")
     LV.Add(, "unusual autumn million Illustration", "")
-    LV.Add(, "clean viola shrnoen running yarn", "")
-    LV.Add(, "люминисцент шиншилла осенний расщелина", "")
-    LV.Add(, "KpuBbleMakapoHbl JIoxyLLIka IIbl}|{ LLblIIJIeHoKuLLblraH", "")
-    LV.Add(, "......................................", "")
+    LV.Add(, "{][} clean viola shrnoen running yarn", "")
+    LV.Add(, "ЙЁk люминисцент шиншилла осенний расщелина", "")
+    LV.Add(, "KpuBbleMakapoHbl JIoxyLLIka LLblIIJIeHoKuLLblraH", "")
+    LV.Add(, "...........................................................", "")
     Loop 9 {
         LV.Add(, "Добро пожаловать в мир Lineage IIl  # " A_Index, "")
     }
-    global LineCounter := 20
+    global LineCounter := 22
 }
 else {
     global LineCounter := 1
 }
 
+
+; Функция рассчета размера (высоты) строки
+GetDefaultLineHeight(hwnd) {
+    RECT := Buffer(16, 0)
+    NumPut("int", 0, RECT, 0) ; LVIR_BOUNDS = 0
+    SendMessage(0x100E, 0, RECT.Ptr, hwnd) ; LVM_GETITEMRECT
+    return NumGet(RECT, 12, "int") - NumGet(RECT, 4, "int") ; Bottom - Top
+}
+
+
+; Функция загрузки и регистрации шрифта
+; 0 (DEFAULT_QUALITY) — настройки по умолчанию.
+; 3 (NONANTIALIASED_QUALITY) — без сглаживания
+; 4 (ANTIALIASED_QUALITY) — обычное сглаживание.
+; 5 (CLEARTYPE_QUALITY) — субпиксельное сглаживание ClearType.
+SetFont(fName, fpath, fSize, fWidth, hwnd, fQuality) {
+    ; Проверяем и регистрируем шрифт в системе
+    if (!DllCall("Gdi32.dll\AddFontResourceEx", "Str", fpath, "UInt", 0x10, "UInt", 0)) {   ; 0x10 = FR_PRIVATE
+        return false ; Не удалось загрузить файл шрифта
+    }
+
+    ; Пересчитываем размер из пунктов (pt) в пиксели устройства
+    hDC := DllCall("GetDC", "Ptr", hwnd, "Ptr")
+    if (!hDC)
+        return false
+
+    logPixelsY := DllCall("GetDeviceCaps", "Ptr", hDC, "Int", 90, "Int") ; 90 = LOGPIXELSY
+    DllCall("ReleaseDC", "Ptr", hwnd, "Ptr", hDC)
+    fHeight := -DllCall("MulDiv", "Int", fSize, "Int", logPixelsY, "Int", 72, "Int")
+
+    ; Создаем структуру шрифта Windows (GDI Object)
+    hFont := DllCall("CreateFont",
+        "Int", fHeight, "Int", 0, "Int", 0, "Int", 0,
+        "Int", fWidth ,
+        "UInt", 0, "UInt", 0, "UInt", 0,
+        "UInt", 0,             ; fdwCharSet
+        "UInt", 0,             ; fdwOutputPrecision
+        "UInt", 0,             ; fdwClipPrecision
+        "UInt", fQuality,      ; fdwQuality
+        "UInt", 0,             ; fdwPitchAndFamily
+        "Str", fName, "Ptr")
+
+    if (!hFont)
+        return false
+
+    try {
+        SendMessage(0x0030, hFont, 1, hwnd) ; WM_SETFONT
+        SendMessage(0x001D, 0, 0, hwnd)     ; WM_SETREDRAW = false
+        SendMessage(0x1093, 0, 0, hwnd)     ; LVM_SETSELECTEDCOLUMN
+        SendMessage(0x001D, 1, 0, hwnd)     ; WM_SETREDRAW = true
+        DllCall("RedrawWindow", "Ptr", hwnd, "Ptr", 0, "Ptr", 0, "UInt", 1) ; RDW_INVALIDATE
+    } catch {
+        return false
+    }
+
+    return true
+}
+
+
+; Функция отключения сглаживания шрифта
 DisableFontAntialiasing(hwnd) {
     ; Получаем текущий шрифт элемента
     currentFont := DllCall("SendMessage", "ptr", hwnd, "uint", 0x0031, "ptr", 0, "ptr", 0, "ptr") ; WM_GETFONT
@@ -231,7 +364,6 @@ MinimizeRestore(*) {
     global isHidden
 
     if (isHidden) {     ; если чат был скрыт - восстанавливаем
-        ;btnLastStr.SetFont("c" DefaultTextColor)
         wSysChat.Show()
         WinShow(ChatBkgrnd)
         WinHide(RestoreIcon)
@@ -241,7 +373,6 @@ MinimizeRestore(*) {
         isHidden := false
     }
     else {      ; скрываем чат
-        ;btnLastStr.SetFont("c" DefaultTransColor)
         wSysChat.Hide()
         WinHide(ChatBkgrnd)
         WinHide(HideIcon)
@@ -281,7 +412,6 @@ CoordMode "Mouse", "Client"
         global IsUserScrolling
 
         IsUserScrolling := true
-        ;btnLastStr.Opt("-Hidden")
         WinShow(ScrollDownIcon)
         ScrollLV(-2)
     }
@@ -297,7 +427,6 @@ CoordMode "Mouse", "Client"
 
         if (BottomIndex >= TotalRows) {
             IsUserScrolling := false
-            ;btnLastStr.Opt("+Hidden")
             WinHide(ScrollDownIcon)
         } else {
             IsUserScrolling := true
@@ -351,8 +480,6 @@ PreventAllClicks(wParam, lParam, msg, hwnd) {
 
 ;------------------------------------------------------------------------------------------------------
 ; Регистрируем обработчик для сообщения WM_COPYDATA (0x004A)
-
-MAX_MSG_LENGTH := 62
 
 global EventQueue := []
 OnMessage(0x004A, ReceiveData)
@@ -557,7 +684,4 @@ ExitFunc(ExitReason, ExitCode) {
 		LogDebug("--- Скрипт завершен (Причина: " ExitReason ")`n*****************************************************************")
 		LogFile.Close()
 	}
-    ;global FontFile
-    ;DllCall("RemoveFontResource", "Str", FontFile)
-    ;DllCall("SendMessage", "Ptr", 0xFFFF, "UInt", 0x001D, "Ptr", 0, "Ptr", 0)
 }
