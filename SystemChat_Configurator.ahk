@@ -20,23 +20,40 @@ if !DirExist("umodel") {
 }
 */
 
+
+; Шрифты. Для каждого поддержанного размера (pt) указана длина типовой строки, помещающейся в чат (~320px)
 fontsMap := Map(
-    "Segoe UI", "NULL",
-    ;"SF Pro", "\resources\SF-Pro.ttf",
-    "Nunito", "\resources\Nunito-Regular.ttf"
+    "Win 2000", { path: "NULL", caps: {8: 52, 10: 43, 11: 42, 12:36, 13:35, 14:33}, internalName: "MS Shell Dlg" },
+    "NCSoft C1", { path: "\resources\NCSoft-C1.ttf", caps: {12: 52}, internalName: "NCSoft" },
+    "Segoe UI", { path: "NULL", caps: {8: 59, 10: 52, 11: 45, 12: 42, 13: 35, 14: 33} },
+    "Nunito", { path: "\resources\Nunito-Regular.ttf", caps: {8: 60, 10: 55, 11: 41, 12:39, 13:32, 14:30} },
+    "Hedera big", { path: "\resources\Harbor.ttf", caps : {12: 52}, internalName: "Harbor" }
 )
 
-for fontName, relPath in fontsMap {
-    if !(fontName = "Segoe UI") {
-        fullPath := A_ScriptDir . relPath
-        if !DllCall("Gdi32.dll\AddFontResourceEx", "Str", fullPath, "UInt", 0x10, "UInt", 0) {
-            MsgBox("Не удалось загрузить файл шрифта: " fullPath, "Error", "IconX")
-        }
+LoadedFonts := []
+
+for name, data in fontsMap {
+    if (data.path = "NULL") {
+        LoadedFonts.Push(name)
+        continue
     }
+
+    fullPath := A_ScriptDir . data.path
+    if !FileExist(fullPath) {
+        MsgBox("Файл шрифта не найден по пути:`n" fullPath, "Ошибка", "IconX")
+        continue
+    }
+
+    if !DllCall("Gdi32.dll\AddFontResourceEx", "Str", fullPath, "UInt", 0x10, "UInt", 0) {
+        MsgBox("Не удалось зарегистрировать шрифт в системе: " name, "Error", "IconX")
+        continue
+    }
+
+    LoadedFonts.Push(name)
 }
 
 HelpText := {
-        Tutorial: "
+        RU: "
         ( LTrim
         Для работы всего функционала скрипт должен лежать в папке \Игра\Patches\
 
@@ -55,19 +72,25 @@ HelpText := {
         )",
         EN: "
         ( LTrim
-        For full functionality the script must be placed into folder \Lineage2\Patches\
+        For full functionality place the script into folder \Lineage2\Patches\
 
-        Click the "Load" button to load game system messages.
+        Click the "Load" button to reload game system messages.
 
-        To select several lines at once hold Ctrl or Shift. Choose the lines and select required colors.
+        To select several lines at once hold Ctrl or Shift.
+        Choose the lines and set required colors.
 
-        If no color is specified for a message, that message will not be displayed in chat.
+        If no color is specified for a message - that message will not be displayed in chat.
 
         You can customize your own color palette using the cells from the second row.
 
         Set window size in  %  from main-game chat.
 
         To save the config, click "Save". The customized colors are also saved.
+
+        '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+
+        Do you want change Russian language to English?
 
         )"
 }
@@ -84,6 +107,7 @@ global isListLoaded := false
 global isChanged := false
 global OnceChanged := false
 
+
 global ColorsConfMap := Map()
 configPath := A_ScriptDir "\ChatConfig.ini"
 
@@ -98,10 +122,11 @@ mColors := [
     {ID: 3, Name: "SkyBlue",  Hex: "0x19FFFF"},
     {ID: 4, Name: "Gold",     Hex: "0xF4CB21"},
     {ID: 5, Name: "Purple",   Hex: "0xCC00FF"},
-    {ID: 6, Name: "Indigo",   Hex: "0x4A4AEE"},
+    {ID: 6, Name: "Indigo",   Hex: "0x1F85C9"},
     {ID: 7, Name: "White",    Hex: "0xEAEAEA"},
     {ID: 8, Name: "Tan",      Hex: DefaultTextColor}
 ]
+
 
 MyGui2 := Gui()
 MyGui2.Title := "System Chat Configurator"
@@ -112,8 +137,6 @@ SendMessage(0x0080, 0, hIcon, MyGui2.Hwnd) ; WM_SETICON (0=маленькая д
 SendMessage(0x0080, 1, hIcon, MyGui2.Hwnd) ; WM_SETICON (1=большая для Alt+Tab)
 TraySetIcon("shell32.dll","329")
 
-
-;MyGui2.OnEvent("Close", (*) => ExitApp())
 MyGui2.OnEvent("Close", ConfirmAndExit)
 
 
@@ -122,29 +145,41 @@ btnLoad := MyGui2.Add("Button", "x10 y20 w80 h29", "Load")
 btnLoad.OnEvent("Click", (*) => ReloadSystemMsgE())
 
 
+
+
 ; Блок Шрифты
-ddlFontOpts := []
-for fontName in fontsMap {
-    ddlFontOpts.Push(fontName)
-}
-
 btnLoad.GetPos(&bX, &bY)
-ddlFont := MyGui2.Add("DropDownList", "x" bX+100 " yp+2 w100", ddlFontOpts)
+ddlFont := MyGui2.Add("DropDownList", "x" bX+100 " yp+2 w100", LoadedFonts)
 ddlFont.Text := "Segoe UI"
+ddlFont.Opt("+Disabled")
 
-ddlFontSize := MyGui2.Add("DropDownList", "x+3 yp w50", ["8" , "9" , "10", "11", "12", "13", "14"])
+ddlFontSize := MyGui2.Add("DropDownList", "x+3 yp w50", ["8" , "10", "11", "12", "13", "14"])
 ddlFontSize.Text := 10
+ddlFontSize.Opt("+Disabled")
 
 ddlFont.GetPos(&bX, &bY)
 tShadows := MyGui2.Add("Text", "x" bX+2 " y" bY+30 " +Disabled", "Shadows:")
 fcbxShadows := MyGui2.Add("Text", "x+3 yp w16 h16 Border Center 0x200 +Disabled", "✓")
-gbxFonts := MyGui2.Add("GroupBox", "x" bX-4 " y" bY-20 " w161 h74", "Fonts")
 
-fcbxShadows.OnEvent("Click", ToggleBox)
-ToggleBox(CtrlObj, *) {
+fcbxShadows.OnEvent("Click", EnDisShadows)
+EnDisShadows(CtrlObj, *) {
     CtrlObj.Text := (CtrlObj.Text = "") ? "✓" : ""
     EnableSaveConfig()
 }
+
+tAA := MyGui2.Add("Text", "x+15 yp +Disabled", "AA:")
+fcbxAA := MyGui2.Add("Text", "x+3 yp w16 h16 Border Center 0x200 +Disabled", "")
+
+fcbxAA.OnEvent("Click", EnDisAA)
+EnDisAA(CtrlObj, *) {
+    CtrlObj.Text := (CtrlObj.Text = "") ? "✓" : ""
+    Sleep(-1)
+    SetFonts("ctrl", "info", lv.Hwnd, (fontsMap[ddlFont.Text].HasOwnProp("internalName") ? fontsMap[ddlFont.Text].internalName : ddlFont.Text), ddlFontSize.Text, 400, fcbxAA.Text)
+    EnableSaveConfig()
+}
+
+gbxFonts := MyGui2.Add("GroupBox", "x" bX-4 " y" bY-20 " w161 h74", "Fonts")
+
 
 
 ; Блок Окно
@@ -152,11 +187,8 @@ ddlFont.GetPos(&bX, &bY)
 tChatSize := MyGui2.Add("Text", "x" bX+172 " y" bY+4 " +Disabled", "Chat Size:")
 ddlWSize := MyGui2.Add("DropDownList", "x+3 yp-4 w60", ["30%"])
 ddlWSize.Text := "30%"
-
-
 ddlWSize.Opt("+Disabled")
-ddlFont.Opt("+Disabled")
-ddlFontSize.Opt("+Disabled")
+
 
 
 tChatSize.GetPos(&bX, &bY)
@@ -169,16 +201,36 @@ tChatSize.GetPos(&bX, &bY)
 gbxWin := MyGui2.Add("GroupBox", "x" bX-5 " y" bY-24 " w129 h74", "Window")
 
 
+
 ; Инструкция и Опции
 btnLoad.GetPos(&bX, &bY)
 MyGui2.SetFont("s10 underline", "Segoe UI")
-Tut2 := MyGui2.Add("Text", "cBlue x750 y" bY+5 " w50", "Tutorial")
-Tut2.OnEvent("Click", (*) => MsgBox(HelpText.Tutorial, "Help"))
-MyGui2.Add("Text", "cBlue x+1", "(EN)").OnEvent("Click", (*) => MsgBox(HelpText.EN, "Help"))
+MyGui2.Add("Text", "cBlue x750 y" bY+5 " w50", "Tutorial").OnEvent("Click", (*) => ShowHelp("ru"))
+MyGui2.Add("Text", "cBlue x+1", "(EN)").OnEvent("Click", (*) => ShowHelp("en"))
+
+global ENLang := false
+ShowHelp(lang) {
+    global ENLang
+
+    if (lang = "en") {
+        if !ENLang {
+            result := MsgBox(HelpText.EN, "Help", 0x144) ;0x40 - Info, 0x4 - Yes/No, 0x100 - default 2
+            if (result == "Yes") {
+                ENLang := true
+            }
+        } else {
+            MsgBox(HelpText.EN, "Help")
+        }
+    } else {
+        MsgBox(HelpText.RU, "Help")
+    }
+}
+
 
 Opts := MyGui2.Add("Text", "x+20 yp cBlue +Disabled", "Options")
 Opts.OnEvent("Click", (*) => ShowOptions(MyGui2))
 MyGui2.SetFont("norm s10", "Segoe UI")
+
 
 
 ; Кнопка Сохранить
@@ -186,6 +238,7 @@ btnLoad.GetPos(&bX, &bY)
 btnSave := MyGui2.Add("Button", "x+30 y" bY " h29", "Save config")
 btnSave.Opt("+Disabled")
 btnSave.OnEvent("Click", (*) => SaveConfig())
+
 
 
 ; "Клавиши" с предопределенными цветами
@@ -196,7 +249,7 @@ MainBtn := [] ; будем использовать контрол типа "Tex
         if (obj.ID > 1) {
             MainBtn.Push(MyGui2.Add("Text", "x+5 w30 h20 Border Background" obj.Hex))
         }
-        MainBtn[obj.ID].fCol := obj.Hex     ;будем именовать "Fixed Color (fCol)", так как цвет зашит в код
+        MainBtn[obj.ID].fCol := obj.Hex     ; будем именовать "Fixed Color (fCol)", так как цвет зашит в код
     }
 
 
@@ -210,7 +263,7 @@ CustomBtn := []
         else {
             CustomBtn.Push(MyGui2.Add("Text", "x+5 w30 h20 Border BackgroundFFFFFF"))
         }
-        CustomBtn[obj.ID].cCol := 0     ;будем именовать "Custom Color (cCol)", так как цвет пользователь может настраивать;
+        CustomBtn[obj.ID].cCol := 0     ; будем именовать "Custom Color (cCol)", так как цвет пользователь может настраивать;
         CustomBtn[obj.ID].id := obj.ID
     }
 
@@ -247,6 +300,7 @@ for obj in mColors {
 XBtn.OnEvent("Click",  (*) => ClearColor())
 
 
+
 btnLoad.GetPos(&bX, &bY)
 ; Создание таблицы сообщений
 lv := MyGui2.AddListView("x" bX " y" bY+65 " w1000 h675 NoSortHdr -E0x200 +LV0x14000 Background" DefaultBackColor " c" DefaultTextColor, ["RGB", "ID", "Msg"])
@@ -259,38 +313,114 @@ CLV := LV_Colors(lv)
 MyGui2.Show()
 
 
+
+
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
-; Управление шрифтами
-ddlFont.OnEvent("Change", SetFonts)
-ddlFontSize.OnEvent("Change", SetFonts)
+; Перерисовка таблицы после смены шрифта
+ddlFont.OnEvent("Change", OnFontChange)
+ddlFontSize.OnEvent("Change", (*) => SetFonts("ctrl", "info", lv.Hwnd, (fontsMap[ddlFont.Text].HasOwnProp("internalName") ? fontsMap[ddlFont.Text].internalName : ddlFont.Text), ddlFontSize.Text, 400, fcbxAA.Text))
 
-SetFonts(*) {
-    font := ddlFont.Text
-    fontSize := ddlFontSize.Text
-    fontWidth := 400
 
-    ; Пересчитываем размер из пунктов (pt) в пиксели устройства для корректного отображения
-    hDC := DllCall("GetDC", "Ptr", lv.Hwnd, "Ptr")
+OnFontChange(ctrl, *) {
+
+    if (ddlFont.Text = "Hedera big") {
+        tAA.Opt("+Disabled")
+        fcbxAA.Opt("+Disabled")
+        fcbxAA.Text := ""
+        ddlFontSize.Opt("+Disabled")
+        ddlFontSize.Text := 12
+        fontName := fontsMap[ddlFont.Text].internalName
+    }
+    else if (ddlFont.Text = "NCSoft C1") {
+        tAA.Opt("+Disabled")
+        fcbxAA.Opt("+Disabled")
+        fcbxAA.Text := ""
+        ddlFontSize.Opt("+Disabled")
+        ddlFontSize.Text := 12
+        fontName := fontsMap[ddlFont.Text].internalName
+    }
+    else {
+        fontName := fontsMap[ddlFont.Text].HasOwnProp("internalName") ? fontsMap[ddlFont.Text].internalName : ddlFont.Text
+        ddlFontSize.Opt("-Disabled")
+        if BlackBkgrnd {
+            tAA.Opt("-Disabled")
+            fcbxAA.Opt("-Disabled")
+
+            if (fontName = "Nunito") {
+                fcbxAA.Text := "✓"
+            }
+
+            else {
+                fcbxAA.Text := ""
+            }
+
+        }
+    }
+
+    if !(SetFonts("ctrl", "info", lv.Hwnd, fontName, ddlFontSize.Text, 400, fcbxAA.Text)) {     ; если ошибка при регистрации шрифта, то используем дефолтный
+        LV.SetFont("s8", "MS Shell Dlg")
+        MAX_MSG_LENGTH := 59
+    }
+}
+
+
+SetFonts(ctrl, info, hwnd, fName, fSize, fWidth, fQuality) {
+    (fQuality = "✓") ? (fQuality := 5) : (fQuality := 3)
+
+    ; Пересчитываем размер из пунктов (pt) в пиксели устройства
+    hDC := DllCall("GetDC", "Ptr", hwnd, "Ptr")
+    if (!hDC)
+        return false
+
     logPixelsY := DllCall("GetDeviceCaps", "Ptr", hDC, "Int", 90, "Int") ; 90 = LOGPIXELSY
-    DllCall("ReleaseDC", "Ptr", lv.Hwnd, "Ptr", hDC)
-    fontHeight := -DllCall("MulDiv", "Int", fontSize, "Int", logPixelsY, "Int", 72, "Int")
+    DllCall("ReleaseDC", "Ptr", hwnd, "Ptr", hDC)
+    fHeight := -DllCall("MulDiv", "Int", fSize, "Int", logPixelsY, "Int", 72, "Int")
 
     ; Создаем структуру шрифта Windows (GDI Object)
     hFont := DllCall("CreateFont",
-        "Int", fontHeight, "Int", 0, "Int", 0, "Int", 0,
-        "Int", fontWidth ,
-        "UInt", 0, "UInt", 0, "UInt", 0, "UInt", 0, "UInt", 0, "UInt", 0, "UInt", 0, "UInt", 0,
-        "Str", font, "Ptr")
+        "Int", fHeight, "Int", 0, "Int", 0, "Int", 0,
+        "Int", fWidth ,
+        "UInt", 0, "UInt", 0, "UInt", 0,
+        "UInt", 0,             ; fdwCharSet
+        "UInt", 0,             ; fdwOutputPrecision
+        "UInt", 0,             ; fdwClipPrecision
+        "UInt", fQuality,      ; fdwQuality
+        "UInt", 0,             ; fdwPitchAndFamily
+        "Str", fName, "Ptr")
 
     if (!hFont)
-        return
+        return false
 
-    SendMessage(0x0030, hFont, 1, lv.Hwnd) ; WM_SETFONT
-    SendMessage(0x001D, 0, 0, lv.Hwnd) ; WM_SETREDRAW = false
-    SendMessage(0x1093, 0, 0, lv.Hwnd) ; LVM_SETSELECTEDCOLUMN (пустое сообщение, чтобы сообщить об изменении шрифта и тригернуть пересчет высоты и отступов строк)
-    SendMessage(0x001D, 1, 0, lv.Hwnd) ; WM_SETREDRAW = true
-    DllCall("RedrawWindow", "Ptr", lv.Hwnd, "Ptr", 0, "Ptr", 0, "UInt", 1) ; RDW_INVALIDATE
+    try {
+        SendMessage(0x0030, hFont, 1, hwnd) ; WM_SETFONT
+        SendMessage(0x001D, 0, 0, hwnd)     ; WM_SETREDRAW = false
+        SendMessage(0x1093, 0, 0, hwnd)     ; LVM_SETSELECTEDCOLUMN
+        SendMessage(0x001D, 1, 0, hwnd)     ; WM_SETREDRAW = true
+        DllCall("RedrawWindow", "Ptr", hwnd, "Ptr", 0, "Ptr", 0, "UInt", 1) ; RDW_INVALIDATE
+    } catch {
+        return false
+    }
+
+    return true
 }
+
+
+DisableFontAntialiasing(hwnd) {
+    ; Получаем текущий шрифт элемента
+    currentFont := DllCall("SendMessage", "ptr", hwnd, "uint", 0x0031, "ptr", 0, "ptr", 0, "ptr") ; WM_GETFONT
+
+    ; Создаем структуру для изменения параметров шрифта
+    LOGFONT := Buffer(92, 0)
+    DllCall("GetObject", "ptr", currentFont, "int", 92, "ptr", LOGFONT)
+
+    ; Меняем качество шрифта (смещение 26) на NONANTIALIASED_QUALITY (значение 3)
+    NumPut("uchar", 3, LOGFONT, 26)
+
+    ; Создаем новый четкий шрифт и применяем его
+    newFont := DllCall("CreateFontIndirect", "ptr", LOGFONT, "ptr")
+    DllCall("SendMessage", "ptr", hwnd, "uint", 0x0030, "ptr", newFont, "ptr", 1) ; WM_SETFONT
+}
+
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
 ; Окно Дополнительных параметров
@@ -357,10 +487,14 @@ ShowOptions(ParentGui) {
                 fcbxShadows.Text := ""
                 fcbxShadows.Opt("+Disabled")
                 tShadows.Opt("+Disabled")
+                OnFontChange("ctrl")
             }
             else {
                 fcbxShadows.Opt("-Disabled")
                 tShadows.Opt("-Disabled")
+                fcbxAA.Opt("+Disabled")
+                tAA.Opt("+Disabled")
+                fcbxAA.Text := ""
             }
             EnableSaveConfig()
         }
@@ -372,6 +506,7 @@ ShowOptions(ParentGui) {
         optGui.Show("Hide")
     }
 }
+
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
 ; Считывание параметров игрового чата и размеров окна
@@ -405,7 +540,12 @@ if (VResolY > 2 * GameChatHeight + 5) {
 else {
     maxPercent := ((VResolY - (GameChatHeight + 5)) / GameChatHeight) * 100
     if (maxPercent < 30) {
-        MsgBox("Слишком мало места для системного чата.`nЗапустите игру и уменьшите размер основного чата.`nРазмер системного чата временно ограничен 30% основного", "Недостаточно места", "IconX Owner" MyGui2.Hwnd)
+        if ENLang {
+            MsgBox("Not enough space for system chat.`nStart the game and decrease main game chat window height.`nSize of additional system chat temporary set as 30%", "Not enough space", "IconX Owner" MyGui2.Hwnd)
+        }
+        else {
+            MsgBox("Слишком мало места для системного чата.`nЗапустите игру и уменьшите размер основного чата.`nРазмер системного чата временно ограничен 30% основного", "Недостаточно места", "IconX Owner" MyGui2.Hwnd)
+        }
         maxPercent := 30
     }
 }
@@ -433,15 +573,19 @@ else {
 
 ; Вызов разблокировки кнопки Сохранить, только если значения реально поменяли
 ddlWSize.oldText := ddlWSize.Text
-
 ddlWSize.OnEvent("Change",(ctrl, *) => (ctrl.Text != ctrl.oldText) ? (ctrl.oldText := ctrl.Text, EnableSaveConfig()) : "")
 
 
 eChatPosX.oldValue := eChatPosX.Value
 eChatPosY.oldValue := eChatPosY.Value
-
 eChatPosX.OnEvent("Change",(ctrl, *) => (ctrl.Value != ctrl.oldValue) ? (ctrl.oldValue := ctrl.Value, EnableSaveConfig()) : "")
 eChatPosY.OnEvent("Change",(ctrl, *) => (ctrl.Value != ctrl.oldValue) ? (ctrl.oldValue := ctrl.Value, EnableSaveConfig()) : "")
+
+ddlFont.oldText := ddlFont.Text
+ddlFontSize.oldText := ddlFontSize.Text
+ddlFont.OnEvent("Change",(ctrl, *) => (ctrl.Text != ctrl.oldText) ? (ctrl.oldText := ctrl.Text, EnableSaveConfig()) : "")
+ddlFontSize.OnEvent("Change",(ctrl, *) => (ctrl.Text != ctrl.oldText) ? (ctrl.oldText := ctrl.Text, EnableSaveConfig()) : "")
+
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
 ; Подгрузка данных из systemmsg-e.txt по кнопке LOAD
@@ -449,16 +593,19 @@ eChatPosY.OnEvent("Change",(ctrl, *) => (ctrl.Value != ctrl.oldValue) ? (ctrl.ol
 ReloadSystemMsgE() {
     global isChanged, OnceChanged, DebugMode, ChatPosManual, BlackBkgrnd
 
-    if (btnLoad.Text = "Reload") && (isChanged = true) {
-        result := MsgBox("Are you sure to reload?", "ChatConfig.ini", "0x24 Owner" MyGui2.Hwnd) ; 0x20 Icon?, 0x4 Y/N
+    if (isChanged = true) {
+            if ENLang {
+                result := MsgBox("Are you sure to reload?", "ChatConfig.ini", "0x24 Owner" MyGui2.Hwnd) ; 0x20 Icon?, 0x4 Y/N
+                }
+            else {
+                result := MsgBox("Вы уверены, что хотите перезагрузить настройки?", "ChatConfig.ini", "0x24 Owner" MyGui2.Hwnd)
+            }
         if (result = "No") {
             return
         }
-    } else if (!DecodeMsgFile() || !ReadDecodedFile()) {
-        return
     }
 
-    if !FileExist(configPath) {
+    if (!DecodeMsgFile() || !ReadDecodedFile()) {
         return
     }
 
@@ -492,7 +639,17 @@ ReloadSystemMsgE() {
         btnLoad.Text := "Reload"
     }
 
-    result := MsgBox("Previously saved Config file found.`nDo you want to apply color-schema?", "ChatConfig.ini", "0x24 Owner" MyGui2.Hwnd) ; 0x20 Icon?, 0x4 Y/N
+    if !FileExist(configPath) {
+        return
+    }
+
+    if ENLang {
+        result := MsgBox("Previously saved Config file found.`nDo you want to apply color-schema?", "ChatConfig.ini", "0x24 Owner" MyGui2.Hwnd)
+    }
+    else {
+        result := MsgBox("Найден ранее сохраненный конфиг-файл.`nЗагрузить его настройки?", "ChatConfig.ini", "0x24 Owner" MyGui2.Hwnd)
+    }
+
     if (result = "Yes") {
         LoadColorConfig(configPath)
         ApplyColorConfig()
@@ -513,7 +670,12 @@ DecodeMsgFile() {
 
     ; Поиск в \L2\system
     if !FileExist(SystemMsgEFilePath) {
-        MsgBox("SystemMsg-e.txt не найден.", "Ошибка", "IconX Owner" MyGui2.Hwnd)
+        if ENLang {
+            MsgBox("SystemMsg-e.txt not found.", "Error", "IconX Owner" MyGui2.Hwnd)
+        }
+        else {
+            MsgBox("SystemMsg-e.txt не найден.", "Ошибка", "IconX Owner" MyGui2.Hwnd)
+        }
         return false
     }
 
@@ -521,7 +683,12 @@ DecodeMsgFile() {
     try {
         FileCopy(SystemMsgEFilePath, ".\l2encdec\", 1)
     } catch {
-        MsgBox("Ошибка копирования SystemMsgE в \l2encdec\ папку", "Ошибка", "IconX Owner" MyGui2.Hwnd)
+        if ENLang {
+            MsgBox("Error during copying SystemMsg-e.txt file to \l2encdec\ folder.", "Error", "IconX Owner" MyGui2.Hwnd)
+        }
+        else {
+            MsgBox("Ошибка копирования SystemMsgE в \l2encdec\ папку", "Ошибка", "IconX Owner" MyGui2.Hwnd)
+        }
         return false
     }
 
@@ -536,7 +703,7 @@ DecodeMsgFile() {
         }
     }
     catch OSError as err {
-            MsgBox("Файл " decFilePath " открыт или заблокирован.`n`nДетали: " err.Message, "Ошибка", "IconX Owner" MyGui2.Hwnd)
+            MsgBox("Файл " decFilePath " открыт или заблокирован.`n`nДетали: " err.Message, "Error", "IconX Owner" MyGui2.Hwnd)
             return false
     }
 
@@ -547,7 +714,7 @@ DecodeMsgFile() {
     SetWorkingDir(oldWorkingDir)
 
     if !FileExist(decFilePath) {
-        MsgBox("Ошибка декодирования", "Ошибка", "IconX Owner" MyGui2.Hwnd)
+        MsgBox("Ошибка декодирования", "Error", "IconX Owner" MyGui2.Hwnd)
         return false
     }
 
@@ -621,6 +788,38 @@ LoadColorConfig(filepath) {
     } catch Error {
         OutputDebug("Failed to load ChatConfig.ini or section [AdditionalChat] is missing`n")
     }
+
+
+    ; Шрифт
+    try {
+    ; в INI файле записано внутреннее имя шрифта, если оно отличается от отображаемого в выпадающем списке.
+    ; поэтому сперва ищем в fontsMap совпадение по внутреннему имени. Если нашли, берем для дальнейшей работы его отображаемое имя
+    ; и по нему проверяем, смогли ли этот шрифт загрузить ранее (если да, то будет в LoadedFonts)
+        vFont := IniRead(filepath, "AdditionalChat", "Font")
+        for name, data in fontsMap {
+            if (data.HasOwnProp("internalName") && (data.internalName = vFont)) {
+                vFont := name
+                break
+            }
+        }
+        for item in LoadedFonts {
+            if (item = vFont) {
+                ddlFont.Text := vFont
+                ddlFont.oldText := ddlFont.Text
+                vFontSize := IniRead(filepath, "AdditionalChat", "FontSize")
+                ddlFontSize.Text := vFontSize
+                ddlFontSize.oldText := ddlFontSize.Text
+                (IniRead(filepath, "AdditionalChat", "FontAA", "3") = "3") ? (fcbxAA.Text := "") : (fcbxAA.Text := "✓")
+                OnFontChange(ddlFont)
+                break
+            }
+        }
+
+    } catch Error {
+        OutputDebug("Failed to load ChatConfig.ini or section [AdditionalChat] is missing`n")
+    }
+
+
     ; Цвета кастомным "клавиш"
     try {
         sectionContent := IniRead(filepath, "CustomColors") ; без третьего параметра IniRead возвращает строку "ключ=значение`nключ2=значение2"
@@ -671,9 +870,9 @@ ApplyColorConfig(*) {
         if (!idMap.Has(curID))
             continue
 
-        lv.Modify(idMap[curID], "Col1", hCol) ; 3ий параметр здесь - это значение переменной, которое запишем в 1ый стобец.
+        lv.Modify(idMap[curID], "Col1", hCol) ; 3-ий параметр здесь - это значение переменной, которое запишем в 1ый стобец.
         CLV.UpdateProps()
-        CLV.Row(idMap[curID], "", ColorsConfMap[curID]) ;здесь 3ий параметр - цвет, в который покрасим шрифт
+        CLV.Row(idMap[curID], "", ColorsConfMap[curID]) ; здесь 3-ий параметр - цвет, в который покрасим шрифт
     }
 
     lv.Opt("+Redraw")
@@ -804,6 +1003,7 @@ global OnceChanged, isChanged
         isChanged := true
         if (isListLoaded = true) {
             btnSave.Opt("-Disabled")
+            btnLoad.Text := "Reload"
         }
     }
 }
@@ -840,9 +1040,13 @@ SaveConfig(*) {
 
     (ChatPosManual) ? strChatSizeAndPos := "ChatPosManual=true" : strChatSizeAndPos := "ChatPosManual=false"
 
-    strChatSizeAndPos .= "`nChatSize=" ddlWSize.Text "`nChatPosX=" ChatPosX "`nChatPosY=" ChatPosY "`nChatHeight=" ChatHeight "`nChatRows=" ChatRows "`nFont=" ddlFont.Text "`nFontSize=" ddlFontSize.Text "`nFontPath=" fontsMap[ddlFont.Text]
-    (fcbxShadows.Text = "✓") ? strChatSizeAndPos .= "`nUseShadows=true" :  strChatSizeAndPos .= "`nUseShadows=false"
-    (BlackBkgrnd) ? strChatSizeAndPos .= "`nBlackBkgrnd=true" : strChatSizeAndPos .= "`nBlackBkgrnd=false"
+    strChatSizeAndPos .= "`nChatSize=" ddlWSize.Text "`nChatPosX=" ChatPosX "`nChatPosY=" ChatPosY "`nChatHeight=" ChatHeight "`nChatRows=" ChatRows
+    strChatSizeAndPos .= "`nFont=" (fontsMap[ddlFont.Text].HasOwnProp("internalName") ? fontsMap[ddlFont.Text].internalName : ddlFont.Text) "`nFontSize=" ddlFontSize.Text "`nFontPath=" fontsMap[ddlFont.Text].path
+    (fcbxAA.Text = "✓") ? (strChatSizeAndPos .= "`nFontAA=5") : (strChatSizeAndPos .= "`nFontAA=3") ; 5 = ClearType, 3 = NONANTIALIASED
+    (fcbxShadows.Text = "✓") ? (strChatSizeAndPos .= "`nUseShadows=true") : (strChatSizeAndPos .= "`nUseShadows=false")
+        fontSizeNum := Number(ddlFontSize.Text)
+        strChatSizeAndPos .= "`nStrLength=" fontsMap[ddlFont.Text].caps.%fontSizeNum%
+    (BlackBkgrnd) ? (strChatSizeAndPos .= "`nBlackBkgrnd=true") : (strChatSizeAndPos .= "`nBlackBkgrnd=false")
 
     strCellsColors := ""
     for obj in mColors {
@@ -916,26 +1120,6 @@ GetContrastColor(color) {
 ;B = Y - 1.1070 * I + 1.7046 * Q)
 }
 
-
-;------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-DisableFontAntialiasing(hwnd) {
-    ; Получаем текущий шрифт элемента
-    currentFont := DllCall("SendMessage", "ptr", hwnd, "uint", 0x0031, "ptr", 0, "ptr", 0, "ptr") ; WM_GETFONT
-
-    ; Создаем структуру для изменения параметров шрифта
-    LOGFONT := Buffer(92, 0)
-    DllCall("GetObject", "ptr", currentFont, "int", 92, "ptr", LOGFONT)
-
-    ; Меняем качество шрифта (смещение 26) на NONANTIALIASED_QUALITY (значение 3)
-    NumPut("uchar", 3, LOGFONT, 26)
-
-    ; Создаем новый четкий шрифт и применяем его
-    newFont := DllCall("CreateFontIndirect", "ptr", LOGFONT, "ptr")
-    DllCall("SendMessage", "ptr", hwnd, "uint", 0x0030, "ptr", newFont, "ptr", 1) ; WM_SETFONT
-}
-
-
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
 ; Вызов стандартной виндовой палитры
 WindowsColorPicker(defaultColor := 0xFFFFFF, hwndParent := 0) {
@@ -977,26 +1161,53 @@ CalculateLVHSize(height) {
     tmpGUI := Gui("-SysMenu -Caption -Border -DPIScale")
     tmpGUI.Title := "tmpGUI"
 
-
     LVTemp := tmpGUI.AddListView("x0 y0 -Hdr -Multi")
     LVTemp.ModifyCol(1, 365)
     LVTemp.ModifyCol(2, 0)
     LVTemp.Add(, "Test", "")
+    SetFonts("ctrl", "info", LVTemp.Hwnd, (fontsMap[ddlFont.Text].HasOwnProp("internalName") ? fontsMap[ddlFont.Text].internalName : ddlFont.Text), ddlFontSize.Text, 400, fcbxAA.Text)
 
+/*
+; 1. Получаем контекст устройства (DC) для ListView
+hdc := DllCall("GetDC", "Ptr", LVTemp.Hwnd, "Ptr")
 
-    ; Создаем буфер под структуру RECT (4 целых числа по 4 байта = 16 байт)
-    RECT := Buffer(16, 0)
-    ; LVIR_BOUNDS = 0 (получить границы всего элемента целиком)
-    NumPut("int", 0, RECT, 0)
+; 2. Запрашиваем дескриптор шрифта (hFont) у ListView (0x0031 = WM_GETFONT)
+hFont := SendMessage(0x0031, 0, 0, LVTemp.Hwnd)
 
-    ; 0x100E = LVM_GETITEMRECT, wParam = 0 (индекс первой строки)
-    SendMessage(0x100E, 0, RECT.Ptr, LVTemp.Hwnd)
+; 3. Если ListView вернул 0 (используется дефолтный шрифт системы), запрашиваем шрифт у GUI
+if (!hFont)
+    hFont := SendMessage(0x0031, 0, 0, tmpGUI.Hwnd)
 
-    ; Извлекаем координаты: Top (байты 4-7) и Bottom (байты 12-15)
-    Top := NumGet(RECT, 4, "int")
-    Bottom := NumGet(RECT, 12, "int")
+; Выбираем этот шрифт в контекст устройства для замера
+hOldFont := DllCall("SelectObject", "Ptr", hdc, "Ptr", hFont, "Ptr")
 
-    LineHeight := Bottom - Top
+; Готовим буфер TEXTMETRIC
+TM := Buffer(64, 0)
+DllCall("GetTextMetrics", "Ptr", hdc, "Ptr", TM.Ptr)
+
+; Вытаскиваем метрики
+tmHeight := NumGet(TM, 0, "Int")
+tmAscent := NumGet(TM, 4, "Int")
+tmDescent := NumGet(TM, 8, "Int")
+tmInternalLeading := NumGet(TM, 12, "Int")
+tmExternalLeading := NumGet(TM, 16, "Int")
+
+; Освобождаем ресурсы
+DllCall("SelectObject", "Ptr", hdc, "Ptr", hOldFont, "Ptr")
+DllCall("ReleaseDC", "Ptr", LVTemp.Hwnd, "Ptr", hdc)
+
+MsgBox(
+    "Шрифт из таблицы: " ddlFont.Text " (Размер: " ddlFontSize.Text ")`n`n"
+    "Полная высота (tmHeight): " tmHeight " px`n"
+    "Ascent (Вверх): " tmAscent " px`n"
+    "Descent (Вниз): " tmDescent " px`n"
+    "Internal Leading: " tmInternalLeading " px`n"
+    "External Leading (Воздух): " tmExternalLeading " px`n`n"
+    "Итоговая высота строки Windows: " (tmHeight + tmExternalLeading) " px"
+)
+*/
+
+    LineHeight := GetDefaultLineHeight(LVTemp)
 
     rowCount := Round(height/LineHeight)
     if (rowCount < 5) {
@@ -1004,12 +1215,37 @@ CalculateLVHSize(height) {
         MsgBox("Размер окна доп. чата не может быть меньше 5 строк. `nПринудительно установлено значение 5 строк", "Error", "Icon! Owner" MyGui2.Hwnd)
     }
 
-    LVHSize := (rowCount) * LineHeight
+    LVHSize := (rowCount * LineHeight) + 1
 
     LVTemp.Delete()
     tmpGUI.Destroy()
 
     return {rows: rowCount, height: LVHSize}
+}
+
+
+
+GetDefaultLineHeight(hwnd) {
+    ; Создаем буфер под структуру RECT (4 целых числа по 4 байта = 16 байт)
+    RECT := Buffer(16, 0)
+    NumPut("int", 0, RECT, 0) ; LVIR_BOUNDS = 0 (получить границы всего элемента целиком)
+
+    ; Если в таблице еще нет строк, временно добавляем одну, чтобы замерить, и удаляем
+    itemCount := SendMessage(0x1004, 0, 0, hwnd) ; LVM_GETITEMCOUNT
+    added := false
+    if (itemCount == 0) {
+        ; Добавляем пустую временную строку для замера
+        LVITEM := Buffer(A_PtrSize == 8 ? 88 : 60, 0)
+        SendMessage(0x104D, 0, LVITEM.Ptr, hwnd) ; LVM_INSERTITEM
+        added := true
+    }
+
+    SendMessage(0x100E, 0, RECT.Ptr, hwnd) ; 0x100E = LVM_GETITEMRECT, wParam = 0 (индекс первой строки)
+
+    if (added)
+        SendMessage(0x1008, 0, 0, hwnd) ; LVM_DELETEITEM (удаляем временную)
+
+    return NumGet(RECT, 12, "int") - NumGet(RECT, 4, "int") ; Bottom - Top
 }
 
 ;------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1209,9 +1445,9 @@ ConfirmAndExit(thisGui) {
         }
     }
 
-    for fontName, relPath in fontsMap {
-        if !(fontName = "Segoe UI") {
-            fullPath := A_ScriptDir . relPath
+    for fName in LoadedFonts {
+        if !(fName = "Segoe UI") {
+            fullPath := A_ScriptDir . fontsMap[fName].path
             DllCall("Gdi32.dll\RemoveFontResourceEx", "Str", fullPath, "UInt", 0x10, "UInt", 0)
         }
     }
